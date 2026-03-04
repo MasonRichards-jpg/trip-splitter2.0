@@ -1175,3 +1175,50 @@ a { text-decoration: none; color: inherit; }
   .nav-item { justify-content: center; padding: 10px; }
   .trip-avatars { justify-content: center; }
 }
+
+/* ================================================================
+   GLOBE CANVAS + GLASSMORPHISM
+   ================================================================ */
+
+#globe-canvas {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100vw; height: 100vh;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* Lift UI above the canvas */
+.sidebar { position: relative; z-index: 1; }
+.main    { position: relative; z-index: 1; }
+
+/* Glass sidebar */
+.sidebar {
+  background: rgba(9, 12, 28, 0.78);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+/* Glass topbar */
+.topbar {
+  background: rgba(9, 12, 28, 0.55);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+/* Glass cards */
+.card,
+.stat-card,
+.member-card,
+.debt-card {
+  background: rgba(12, 16, 34, 0.58);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+/* Trip card in sidebar */
+.trip-card {
+  background: rgba(20, 26, 52, 0.65);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
