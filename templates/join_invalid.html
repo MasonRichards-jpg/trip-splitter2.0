@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PayBack — Invalid Invite</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <style>
+    html, body { overflow: auto; }
+    .auth-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+    .auth-card {
+      width: 100%; max-width: 420px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 16px; padding: 44px 40px;
+      box-shadow: 0 0 60px rgba(99,102,241,.08);
+      text-align: center;
+    }
+    .auth-brand { display: flex; align-items: center; gap: 12px; justify-content: center; margin-bottom: 36px; }
+  </style>
+</head>
+<body>
+<div class="auth-wrap">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <div class="brand-icon">P$</div>
+      <span class="brand-name" style="font-size:22px">PayBack</span>
+    </div>
+    <div style="font-size:40px;margin-bottom:16px">🔗</div>
+    <div style="font-size:20px;font-weight:700;margin-bottom:10px">Invalid or Expired Link</div>
+    <div style="font-size:14px;color:var(--muted);margin-bottom:28px">
+      This invite link is no longer valid. Ask the trip owner to send you a new one.
+    </div>
+    <a href="/login" class="btn btn-primary" style="text-decoration:none;justify-content:center;padding:11px 0;font-size:14px;display:flex">
+      Go to Sign In →
+    </a>
+  </div>
+</div>
+</body>
+</html>

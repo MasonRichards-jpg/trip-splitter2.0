@@ -529,7 +529,30 @@ def trip_join_link():
     t, _ = _require_owner()
     token   = main.make_invite_token(t['id'])
     app_url = os.environ.get('APP_URL', request.host_url.rstrip('/'))
-    return {'link': f'{app_url}/register?invite={token}'}
+    return {'link': f'{app_url}/join/{token}'}
+
+
+@app.route('/join/<token>')
+def join_trip(token):
+    """Handle invite links for both logged-in and new users."""
+    payload = main.verify_invite_token(token)
+    if not payload:
+        return render_template('join_invalid.html'), 400
+
+    trip_id = payload.get('trip_id')
+    trip    = main.get_trip(trip_id) if trip_id else None
+    if not trip:
+        return render_template('join_invalid.html'), 400
+
+    # Already logged in — join immediately
+    if 'user_id' in session and _current_user():
+        user = _current_user()
+        main.add_member(trip_id, user['name'], user_id=user['id'])
+        session['active_trip_id'] = trip_id
+        return redirect(url_for('index'))
+
+    # Not logged in — send to register (or login) with token
+    return redirect(url_for('register', invite=token))
 
 
 @app.route('/trip/rename-member', methods=['POST'])
