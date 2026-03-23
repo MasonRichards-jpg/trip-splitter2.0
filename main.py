@@ -1,3 +1,4 @@
+import base64
 import csv
 import io
 import json
@@ -8,15 +9,30 @@ from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
+import requests as _http
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from werkzeug.security import check_password_hash, generate_password_hash
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 
-DATA_FILE = os.environ.get('DATA_FILE', os.path.join(os.path.dirname(__file__), 'data.json'))
+DATA_FILE  = os.environ.get('DATA_FILE', os.path.join(os.path.dirname(__file__), 'data.json'))
 SECRET_KEY = os.environ.get('SECRET_KEY', 'payback-dev-secret-change-me')
 _serializer = URLSafeTimedSerializer(SECRET_KEY)
 PAGE_SIZE = 10
+
+# GitHub storage (optional — set all three env vars to enable)
+_GH_TOKEN = os.environ.get('GITHUB_TOKEN', '')
+_GH_REPO  = os.environ.get('GITHUB_REPO', '')   # "owner/repo-name"
+_GH_PATH  = os.environ.get('GITHUB_PATH', 'data.json')
+_gh_sha   = None  # cached blob SHA; required by GitHub API to update a file
+
+
+def _gh_headers():
+    return {'Authorization': f'token {_GH_TOKEN}', 'Accept': 'application/vnd.github+json'}
+
+
+def _gh_enabled():
+    return bool(_GH_TOKEN and _GH_REPO)
 
 # ── In-memory state ────────────────────────────────────────────────────────────
 
@@ -49,51 +65,74 @@ def _make_default_trip(owner_id, name='My Trip', trip_id=1):
     }
 
 
+def _apply_data(d):
+    """Populate in-memory state from a parsed data dict."""
+    global _next_id, _next_user_id, _next_trip_id
+    users[:] = d.get('users', [])
+    _next_user_id = d.get('next_user_id', 1)
+    _next_id      = d.get('next_id', 1)
+    _next_trip_id = d.get('next_trip_id', 1)
+
+    # ── Migrate old single-trip format ──────────────────────────────────
+    if 'trip' in d and 'trips' not in d:
+        old = d['trip']
+        old['id']              = 1
+        old['owner_id']        = users[0]['id'] if users else 1
+        old['member_user_ids'] = [u['id'] for u in users]
+        if 'members' not in old:
+            old['members'] = []
+        owner = next((u for u in users if u['id'] == old['owner_id']), None)
+        if owner and owner['name'] not in old['members']:
+            old['members'].insert(0, owner['name'])
+        trips[:] = [old]
+        _next_trip_id = max(_next_trip_id, 2)
+        raw_expenses    = d.get('expenses', [])
+        raw_settlements = d.get('settlements', [])
+        for e in raw_expenses:
+            e.setdefault('trip_id', 1)
+        for s in raw_settlements:
+            s.setdefault('trip_id', 1)
+        expenses[:]    = raw_expenses
+        settlements[:] = raw_settlements
+    else:
+        trips[:]       = d.get('trips', [])
+        expenses[:]    = d.get('expenses', [])
+        settlements[:] = d.get('settlements', [])
+
+
 def _load():
-    global trips, expenses, settlements, users, _next_id, _next_user_id, _next_trip_id
+    global trips, expenses, settlements, users, _next_id, _next_user_id, _next_trip_id, _gh_sha
+    if _gh_enabled():
+        try:
+            url = f'https://api.github.com/repos/{_GH_REPO}/contents/{_GH_PATH}'
+            r = _http.get(url, headers=_gh_headers(), timeout=10)
+            if r.status_code == 200:
+                blob = r.json()
+                _gh_sha = blob['sha']
+                raw = base64.b64decode(blob['content'])
+                _apply_data(json.loads(raw))
+                print(f'[PayBack] Loaded data from GitHub ({_GH_REPO}/{_GH_PATH})')
+                return
+            elif r.status_code == 404:
+                print('[PayBack] No data file in GitHub yet — starting fresh')
+                return
+            else:
+                print(f'[PayBack] GitHub load failed ({r.status_code}) — falling back to local file')
+        except Exception as e:
+            print(f'[PayBack] GitHub load error: {e} — falling back to local file')
+
+    # Local fallback
     if not os.path.exists(DATA_FILE):
         return
     try:
         with open(DATA_FILE) as f:
-            d = json.load(f)
-        users[:] = d.get('users', [])
-        _next_user_id = d.get('next_user_id', 1)
-        _next_id      = d.get('next_id', 1)
-        _next_trip_id = d.get('next_trip_id', 1)
-
-        # ── Migrate old single-trip format ──────────────────────────────────
-        if 'trip' in d and 'trips' not in d:
-            old = d['trip']
-            old['id']             = 1
-            old['owner_id']       = users[0]['id'] if users else 1
-            old['member_user_ids'] = [u['id'] for u in users]
-            if 'members' not in old:
-                old['members'] = []
-            # Add owner display name if missing
-            owner = next((u for u in users if u['id'] == old['owner_id']), None)
-            if owner and owner['name'] not in old['members']:
-                old['members'].insert(0, owner['name'])
-            trips[:] = [old]
-            _next_trip_id = max(_next_trip_id, 2)
-            # Stamp trip_id onto old expenses/settlements
-            raw_expenses    = d.get('expenses', [])
-            raw_settlements = d.get('settlements', [])
-            for e in raw_expenses:
-                e.setdefault('trip_id', 1)
-            for s in raw_settlements:
-                s.setdefault('trip_id', 1)
-            expenses[:]    = raw_expenses
-            settlements[:] = raw_settlements
-        else:
-            trips[:]       = d.get('trips', [])
-            expenses[:]    = d.get('expenses', [])
-            settlements[:] = d.get('settlements', [])
-
+            _apply_data(json.load(f))
     except Exception as e:
         print(f'[PayBack] Failed to load data: {e}')
 
 
 def _save():
+    global _gh_sha
     data = {
         'trips':        trips,
         'expenses':     expenses,
@@ -103,8 +142,36 @@ def _save():
         'next_user_id': _next_user_id,
         'next_trip_id': _next_trip_id,
     }
+    json_bytes = json.dumps(data, indent=2).encode()
+
+    if _gh_enabled():
+        try:
+            url     = f'https://api.github.com/repos/{_GH_REPO}/contents/{_GH_PATH}'
+            payload = {
+                'message': 'chore: update data',
+                'content': base64.b64encode(json_bytes).decode(),
+            }
+            if _gh_sha:
+                payload['sha'] = _gh_sha
+            r = _http.put(url, json=payload, headers=_gh_headers(), timeout=15)
+            if r.status_code == 409:
+                # SHA mismatch — someone else wrote first; re-fetch SHA and retry once
+                r2 = _http.get(url, headers=_gh_headers(), timeout=10)
+                if r2.status_code == 200:
+                    _gh_sha = r2.json()['sha']
+                    payload['sha'] = _gh_sha
+                    r = _http.put(url, json=payload, headers=_gh_headers(), timeout=15)
+            if r.status_code in (200, 201):
+                _gh_sha = r.json()['content']['sha']
+                return
+            else:
+                print(f'[PayBack] GitHub save failed ({r.status_code}): {r.text[:200]}')
+        except Exception as e:
+            print(f'[PayBack] GitHub save error: {e}')
+
+    # Local fallback
     with open(DATA_FILE, 'w') as f:
-        json.dump(data, f, indent=2)
+        f.write(json_bytes.decode())
 
 
 _load()

@@ -4,14 +4,14 @@ services:
     runtime: python
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn server:app
-    disk:
-      name: payback-data
-      mountPath: /data
-      sizeGB: 1
     envVars:
       - key: SECRET_KEY
         generateValue: true
-      - key: DATA_FILE
-        value: /data/data.json
       - key: APP_URL
         value: https://payback.onrender.com
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: GITHUB_REPO
+        sync: false
+      - key: GITHUB_PATH
+        value: data.json
