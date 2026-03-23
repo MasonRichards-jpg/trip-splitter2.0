@@ -3,11 +3,7 @@ import csv
 import io
 import json
 import os
-import smtplib
-import threading
 from datetime import datetime
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 
 import requests as _http
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
@@ -320,120 +316,20 @@ def rename_member(trip_id, old_name, new_name):
     _save()
 
 
-# ── Email & Invites ────────────────────────────────────────────────────────────
+# ── Invites ────────────────────────────────────────────────────────────────────
 
-def make_invite_token(email, trip_id):
-    payload = {'email': email.lower(), 'trip_id': trip_id}
-    return _serializer.dumps(payload, salt='invite')
+def make_invite_token(trip_id):
+    return _serializer.dumps({'trip_id': trip_id}, salt='invite')
 
 
-def verify_invite_token(token, max_age=604800):  # 7 days
+def verify_invite_token(token):
     try:
-        payload = _serializer.loads(token, salt='invite', max_age=max_age)
-        if isinstance(payload, dict):
-            return payload  # {'email': ..., 'trip_id': ...}
-        # Legacy tokens were just the email string
-        return {'email': payload, 'trip_id': None}
+        payload = _serializer.loads(token, salt='invite', max_age=2592000)  # 30 days
+        if isinstance(payload, dict) and 'trip_id' in payload:
+            return payload
+        return None
     except (BadSignature, SignatureExpired):
         return None
-
-
-def _send_email_resend(to_email, subject, html, text=None):
-    """Send via Resend HTTP API — works on Render (no SMTP port blocks)."""
-    api_key   = os.environ.get('RESEND_API_KEY', '')
-    from_addr = os.environ.get('MAIL_FROM', 'PayBack <onboarding@resend.dev>')
-    r = _http.post(
-        'https://api.resend.com/emails',
-        headers={'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'},
-        json={'from': from_addr, 'to': [to_email], 'subject': subject, 'html': html,
-              **({'text': text} if text else {})},
-        timeout=15,
-    )
-    if r.status_code in (200, 201):
-        print(f'[PayBack] Email sent via Resend to {to_email}')
-        return True
-    print(f'[PayBack] Resend failed ({r.status_code}): {r.text[:200]}')
-    return False
-
-
-def _send_email_smtp(to_email, subject, html, text=None):
-    """Send via SMTP — for local development."""
-    server    = os.environ.get('MAIL_SERVER', '')
-    port      = int(os.environ.get('MAIL_PORT', 587))
-    username  = os.environ.get('MAIL_USERNAME', '')
-    password  = os.environ.get('MAIL_PASSWORD', '')
-    from_addr = os.environ.get('MAIL_FROM', username)
-    if not server or not username:
-        return False
-    msg = MIMEMultipart('alternative')
-    msg['Subject'] = subject
-    msg['From']    = from_addr
-    msg['To']      = to_email
-    if text:
-        msg.attach(MIMEText(text, 'plain'))
-    msg.attach(MIMEText(html, 'html'))
-    try:
-        if port == 465:
-            with smtplib.SMTP_SSL(server, port, timeout=15) as smtp:
-                smtp.login(username, password)
-                smtp.sendmail(from_addr, to_email, msg.as_string())
-        else:
-            with smtplib.SMTP(server, port, timeout=15) as smtp:
-                smtp.ehlo(); smtp.starttls(); smtp.ehlo()
-                smtp.login(username, password)
-                smtp.sendmail(from_addr, to_email, msg.as_string())
-        print(f'[PayBack] Email sent via SMTP to {to_email}')
-        return True
-    except Exception as e:
-        print(f'[PayBack] SMTP failed: {e}')
-        return False
-
-
-def _do_send(to_email, subject, html, text=None):
-    """Try Resend first (works on Render), fall back to SMTP."""
-    if os.environ.get('RESEND_API_KEY'):
-        return _send_email_resend(to_email, subject, html, text)
-    if os.environ.get('MAIL_SERVER'):
-        return _send_email_smtp(to_email, subject, html, text)
-    print(f'[PayBack] Email not configured — would send to {to_email}: {subject}')
-    return False
-
-
-def _send_email_async(to_email, subject, html, text=None):
-    """Fire-and-forget — returns immediately (used for invites)."""
-    threading.Thread(target=_do_send, args=(to_email, subject, html, text), daemon=True).start()
-    return True
-
-
-def _send_email_sync(to_email, subject, html, text=None):
-    """Blocking send — returns True/False (used for reminders)."""
-    return _do_send(to_email, subject, html, text)
-
-
-def send_invite(to_email, invited_by_name, trip_id):
-    t = get_trip(trip_id)
-    if not t:
-        return False
-    app_url = os.environ.get('APP_URL', 'http://localhost:8000')
-    token   = make_invite_token(to_email, trip_id)
-    link    = f'{app_url}/register?invite={token}&email={to_email}'
-    subject = f"{invited_by_name} invited you to join {t['name']} on PayBack"
-    html = f"""
-    <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px;
-                background:#0f1220;color:#dde2f0;border-radius:12px">
-      <h2 style="color:#818cf8">You're invited! ✈️</h2>
-      <p><strong>{invited_by_name}</strong> has invited you to join
-         <strong>{t['name']}</strong> on PayBack — a group trip expense tracker.</p>
-      <a href="{link}" style="display:inline-block;margin:20px 0;padding:12px 24px;
-         background:#6366f1;color:#fff;text-decoration:none;border-radius:8px;font-weight:600">
-        Join the Trip →
-      </a>
-      <p style="font-size:12px;color:#6b759a">
-        This invite expires in 7 days. If you didn't expect this, you can ignore it.
-      </p>
-    </div>"""
-    text = f"{invited_by_name} invited you to {t['name']}.\n\nJoin here: {link}"
-    return _send_email_async(to_email, subject, html, text)
 
 
 # ── Expenses ───────────────────────────────────────────────────────────────────
@@ -719,40 +615,3 @@ def mark_all_settled(trip_id):
     _save()
 
 
-def send_reminder(trip_id, debtor):
-    balance_data = get_balances(trip_id)
-    debt_info = next(
-        (d for d in balance_data['debts'] if d['debtor'] == debtor), None
-    )
-    if not debt_info:
-        return
-
-    amount   = debt_info['amount']
-    creditor = debt_info['creditor']
-    t        = get_trip(trip_id)
-    user     = get_user_by_email(debtor) or next(
-        (u for u in users if u['name'].lower() == debtor.lower()), None
-    )
-
-    if user and t:
-        app_url = os.environ.get('APP_URL', 'http://localhost:8000')
-        html = f"""
-        <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px;
-                    background:#0f1220;color:#dde2f0;border-radius:12px">
-          <h2 style="color:#f59e0b">Payment Reminder 💸</h2>
-          <p>Hey <strong>{user['name']}</strong>, you owe
-             <strong>${amount:.2f}</strong> to <strong>{creditor}</strong>
-             for <strong>{t['name']}</strong>.</p>
-          <a href="{app_url}" style="display:inline-block;margin:16px 0;padding:12px 24px;
-             background:#6366f1;color:#fff;text-decoration:none;border-radius:8px;font-weight:600">
-            Open PayBack →
-          </a>
-        </div>"""
-        return _send_email_sync(
-            user['email'],
-            f"Reminder: You owe ${amount:.2f} for {t['name']}",
-            html
-        )
-    else:
-        print(f'[PayBack] Reminder: {debtor} owes {creditor} ${amount:.2f} — no registered account found')
-        return False

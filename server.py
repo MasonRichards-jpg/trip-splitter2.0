@@ -144,13 +144,11 @@ def login():
         )
         if user:
             session['user_id'] = user['id']
-            # If they arrived via an invite link, add them to that trip
             if invite_token:
                 payload = main.verify_invite_token(invite_token)
                 trip_id = payload.get('trip_id') if payload else None
                 trip    = main.get_trip(trip_id) if trip_id else None
                 if trip:
-                    main.remove_member(trip_id, payload['email'])
                     main.add_member(trip_id, user['name'], user_id=user['id'])
                     session['active_trip_id'] = trip_id
                     return redirect(url_for('index'))
@@ -213,9 +211,6 @@ def register():
                     trip    = main.get_trip(trip_id) if trip_id else None
 
                     if trip:
-                        # Remove the email placeholder (any casing) then add real name
-                        main.remove_member(trip_id, payload['email'])
-                        main.remove_member(trip_id, email)
                         main.add_member(trip_id, name, user_id=user['id'])
                         session['active_trip_id'] = trip_id
                     else:
@@ -434,19 +429,6 @@ def settle_up_mark_all():
     return redirect(url_for('settle_up'))
 
 
-@app.route('/settle-up/remind', methods=['POST'])
-@login_required
-def settle_up_remind():
-    t = _active_trip()
-    if t:
-        debtor = request.form['debtor']
-        sent = main.send_reminder(t['id'], debtor=debtor)
-        if sent:
-            flash(f'Reminder sent to {debtor}.', 'success')
-        else:
-            flash(f'Could not send reminder — email not configured or {debtor} has no registered account.', 'warning')
-    return redirect(url_for('settle_up'))
-
 
 @app.route('/settle-up/settle', methods=['POST'])
 @login_required
@@ -533,42 +515,21 @@ def trip_new():
 @app.route('/trip/add-member', methods=['POST'])
 @login_required
 def trip_add_member():
-    t, cu = _require_owner()
+    t, _ = _require_owner()
     member = request.form.get('member', '').strip()
     if member:
-        # Normalize emails to lowercase so invite matching works
-        if '@' in member:
-            member = member.lower()
         main.add_member(t['id'], member)
-        if '@' in member:
-            main.send_invite(member, cu['name'], t['id'])
     return redirect(url_for('trip'))
 
 
-@app.route('/trip/invite', methods=['POST'])
+@app.route('/trip/join-link', methods=['POST'])
 @login_required
-def trip_invite():
-    t, cu = _require_owner()
-    email = request.form.get('email', '').strip().lower()
-    if email and '@' in email:
-        main.add_member(t['id'], email)
-        main.send_invite(email, cu['name'], t['id'])
-    return redirect(url_for('trip'))
-
-
-@app.route('/trip/invite-link', methods=['POST'])
-@login_required
-def trip_invite_link():
-    """Generate an invite link without sending email — for copy/share."""
+def trip_join_link():
+    """Generate a shareable join link for this trip."""
     t, _ = _require_owner()
-    email = request.form.get('email', '').strip().lower()
-    if not email or '@' not in email:
-        return {'error': 'invalid email'}, 400
-    main.add_member(t['id'], email)
-    token   = main.make_invite_token(email, t['id'])
+    token   = main.make_invite_token(t['id'])
     app_url = os.environ.get('APP_URL', request.host_url.rstrip('/'))
-    link    = f'{app_url}/register?invite={token}&email={email}'
-    return {'link': link}
+    return {'link': f'{app_url}/register?invite={token}'}
 
 
 @app.route('/trip/rename-member', methods=['POST'])

@@ -126,10 +126,6 @@
           <div class="debt-amount">{{ debt.amount | currency }}</div>
           <div class="debt-desc">{{ debt.debtor }} owes {{ debt.creditor }} for covered expenses</div>
           <div class="debt-actions">
-            <form method="POST" action="/settle-up/remind" style="display:inline">
-              <input type="hidden" name="debtor" value="{{ debt.debtor }}">
-              <button type="submit" class="btn btn-ghost btn-sm">Remind {{ debt.debtor }}</button>
-            </form>
             <form method="POST" action="/settle-up/settle" style="display:inline">
               <input type="hidden" name="debtor"   value="{{ debt.debtor }}">
               <input type="hidden" name="creditor" value="{{ debt.creditor }}">

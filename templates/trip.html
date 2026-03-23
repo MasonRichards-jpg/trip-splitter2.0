@@ -193,30 +193,20 @@
               <button type="submit" class="btn btn-primary btn-sm">+ Add</button>
             </form>
 
-            <!-- Invite by email / copy link -->
+            <!-- Join link -->
             <div style="padding:10px 16px 16px;border-top:1px solid var(--border)">
-              <div style="font-size:11px;color:var(--muted);margin-bottom:8px;font-weight:500;text-transform:uppercase;letter-spacing:.05em">Invite member</div>
-
-              <!-- Send email row -->
-              <form method="POST" action="/trip/invite" style="display:flex;gap:8px;margin-bottom:8px">
-                <input class="form-input" type="email" name="email" placeholder="friend@example.com" style="flex:1" />
-                <button type="submit" class="btn btn-ghost btn-sm">Send ✉</button>
-              </form>
-
-              <!-- Copy link row -->
-              <div style="display:flex;gap:8px">
-                <input class="form-input" type="email" id="cl-email" placeholder="friend@example.com" style="flex:1" />
-                <button type="button" class="btn btn-ghost btn-sm" onclick="copyInviteLink()">Copy Link</button>
-              </div>
-              <div id="cl-box" style="display:none;margin-top:8px">
+              <div style="font-size:11px;color:var(--muted);margin-bottom:8px;font-weight:500;text-transform:uppercase;letter-spacing:.05em">Invite Link</div>
+              <button type="button" class="btn btn-ghost btn-sm" onclick="copyJoinLink()" style="width:100%;justify-content:center">
+                Copy Join Link
+              </button>
+              <div id="jl-box" style="display:none;margin-top:8px">
                 <div style="display:flex;gap:6px;align-items:center">
-                  <input class="form-input" id="cl-val" type="text" readonly
-                         style="flex:1;font-size:11px;color:var(--muted);cursor:text" />
-                  <button type="button" class="btn btn-ghost btn-xs" onclick="doCopy()">Copy</button>
+                  <input class="form-input" id="jl-val" type="text" readonly style="flex:1;font-size:11px;color:var(--muted);cursor:text" />
+                  <button type="button" class="btn btn-ghost btn-xs" onclick="doJLCopy()">Copy</button>
                 </div>
-                <div id="cl-msg" style="font-size:11px;margin-top:4px"></div>
+                <div id="jl-msg" style="font-size:11px;margin-top:4px"></div>
               </div>
-              <div style="font-size:11px;color:var(--muted);margin-top:8px">Enter their email then either send an invite email or copy the link to share via text/WhatsApp.</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:8px">Share this link with anyone — they register once and land directly in this trip. Link expires in 30 days.</div>
             </div>
           </div>
         </div>
@@ -426,37 +416,31 @@ function toggleRename(idx, show) {
   if (show) document.querySelector('#mrename-' + idx + ' input[name=new_name]').focus();
 }
 
-async function copyInviteLink() {
-  const email = document.getElementById('cl-email').value.trim();
-  if (!email) { document.getElementById('cl-email').focus(); return; }
-  const msg = document.getElementById('cl-msg');
+async function copyJoinLink() {
+  const msg = document.getElementById('jl-msg');
+  document.getElementById('jl-box').style.display = 'block';
   msg.textContent = 'Generating…';
   msg.style.color = 'var(--muted)';
-  document.getElementById('cl-box').style.display = 'block';
   try {
-    const resp = await fetch('/trip/invite-link', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body: 'email=' + encodeURIComponent(email),
-    });
+    const resp = await fetch('/trip/join-link', {method: 'POST'});
     const data = await resp.json();
-    document.getElementById('cl-val').value = data.link;
-    doCopy();
-  } catch (e) {
+    document.getElementById('jl-val').value = data.link;
+    doJLCopy();
+  } catch(e) {
     msg.textContent = 'Error generating link.';
     msg.style.color = 'var(--danger)';
   }
 }
 
-function doCopy() {
-  const inp = document.getElementById('cl-val');
-  const msg = document.getElementById('cl-msg');
+function doJLCopy() {
+  const inp = document.getElementById('jl-val');
+  const msg = document.getElementById('jl-msg');
   inp.select();
   navigator.clipboard.writeText(inp.value).then(() => {
-    msg.textContent = '✓ Link copied to clipboard!';
+    msg.textContent = '✓ Copied to clipboard!';
     msg.style.color = 'var(--success)';
   }).catch(() => {
-    msg.textContent = 'Select the link above and copy manually.';
+    msg.textContent = 'Copy the link above manually.';
     msg.style.color = 'var(--muted)';
   });
 }

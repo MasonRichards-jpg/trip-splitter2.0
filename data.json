@@ -24,7 +24,8 @@
       "name": "japan",
       "owner_id": 1,
       "member_user_ids": [
-        1
+        1,
+        4
       ],
       "destination": "",
       "start_date": "2026-03-23",
@@ -36,8 +37,7 @@
       "split_method": "equal",
       "members": [
         "Mason Richards",
-        "JUSTIN",
-        "masrich18@gmail.com"
+        "aaa"
       ]
     },
     {
@@ -119,9 +119,16 @@
       "email": "masrich18@gmail.com",
       "password_hash": "scrypt:32768:8:1$M20gwN80Q1j5C90d$016ad8863a0f196b4d2523e40aca70b90c4f8781f7c9d6cac3f3f2954484c4d1a035491b0bf3f07dc04d51a15e2856d46ee550c8e8067e3ecdb0afd420e122ac",
       "created_at": "2026-03-23"
+    },
+    {
+      "id": 4,
+      "name": "aaa",
+      "email": "asvoue@gmail.com",
+      "password_hash": "scrypt:32768:8:1$3LKAD1QFG65oUq6q$9313ff081e55f9da89cda27f4a06f75e133b6d7b362813f5134dae7c82615a1a44b3cdfd0002fa1e8848ab8e0310f798731bb5d6b72b9c7b61551a8dca0055d6",
+      "created_at": "2026-03-23"
     }
   ],
   "next_id": 16,
-  "next_user_id": 4,
+  "next_user_id": 5,
   "next_trip_id": 8
 }
