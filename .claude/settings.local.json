@@ -3,7 +3,8 @@
     "allow": [
       "Bash(pip install:*)",
       "Bash(python -c \"import server; print\\(''server.py OK''\\)\")",
-      "Bash(python -c \"import main; print\\(''main.py OK''\\)\")"
+      "Bash(python -c \"import main; print\\(''main.py OK''\\)\")",
+      "Bash(python -c \"import server; print\\(''OK''\\)\")"
     ]
   }
 }

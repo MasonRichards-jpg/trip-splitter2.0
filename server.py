@@ -556,6 +556,21 @@ def trip_invite():
     return redirect(url_for('trip'))
 
 
+@app.route('/trip/invite-link', methods=['POST'])
+@login_required
+def trip_invite_link():
+    """Generate an invite link without sending email — for copy/share."""
+    t, _ = _require_owner()
+    email = request.form.get('email', '').strip().lower()
+    if not email or '@' not in email:
+        return {'error': 'invalid email'}, 400
+    main.add_member(t['id'], email)
+    token   = main.make_invite_token(email, t['id'])
+    app_url = os.environ.get('APP_URL', request.host_url.rstrip('/'))
+    link    = f'{app_url}/register?invite={token}&email={email}'
+    return {'link': link}
+
+
 @app.route('/trip/rename-member', methods=['POST'])
 @login_required
 def trip_rename_member():
