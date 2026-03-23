@@ -184,6 +184,8 @@ def register():
         password = request.form.get('password', '')
         confirm  = request.form.get('confirm', '')
         post_tok = request.form.get('invite_token', '')
+        # Restore invite_token so it survives validation errors and re-renders correctly
+        invite_token = post_tok
 
         if not name or not email or not password:
             error = 'All fields are required'
@@ -249,9 +251,13 @@ def index():
     expense_data  = main.get_expenses(t['id'], sort='newest')
     recent        = expense_data['expense_list'][:6]
     all_s         = main.get_settlements(t['id'])
-    settled_pairs = {(s['debtor'], s['creditor']) for s in all_s if s['status'] == 'settled'}
-    pending_debts    = [d for d in balances['debts']
-                        if (d['debtor'], d['creditor']) not in settled_pairs]
+    settled_amounts = {(s['debtor'], s['creditor']): s['amount']
+                       for s in all_s if s['status'] == 'settled'}
+    pending_debts = []
+    for d in balances['debts']:
+        remaining = round(d['amount'] - settled_amounts.get((d['debtor'], d['creditor']), 0), 2)
+        if remaining > 0.005:
+            pending_debts.append({**d, 'amount': remaining})
     unsettled_amount = round(sum(d['amount'] for d in pending_debts), 2)
     return render_template(
         'index.html',
@@ -372,9 +378,13 @@ def balances():
     member       = request.args.get('member', 'all')
     balance_data = main.get_balances(t['id'], member=member)
     all_s        = main.get_settlements(t['id'])
-    settled_pairs = {(s['debtor'], s['creditor']) for s in all_s if s['status'] == 'settled'}
-    pending_debts = [d for d in balance_data['debts']
-                     if (d['debtor'], d['creditor']) not in settled_pairs]
+    settled_amounts = {(s['debtor'], s['creditor']): s['amount']
+                       for s in all_s if s['status'] == 'settled'}
+    pending_debts = []
+    for d in balance_data['debts']:
+        remaining = round(d['amount'] - settled_amounts.get((d['debtor'], d['creditor']), 0), 2)
+        if remaining > 0.005:
+            pending_debts.append({**d, 'amount': remaining})
     return render_template(
         'balances.html',
         balances=balance_data,
@@ -395,9 +405,13 @@ def settle_up():
         return redirect(url_for('trip'))
     balance_data  = main.get_balances(t['id'])
     all_s         = main.get_settlements(t['id'])
-    settled_pairs = {(s['debtor'], s['creditor']) for s in all_s if s['status'] == 'settled'}
-    pending_debts = [d for d in balance_data['debts']
-                     if (d['debtor'], d['creditor']) not in settled_pairs]
+    settled_amounts = {(s['debtor'], s['creditor']): s['amount']
+                       for s in all_s if s['status'] == 'settled'}
+    pending_debts = []
+    for d in balance_data['debts']:
+        remaining = round(d['amount'] - settled_amounts.get((d['debtor'], d['creditor']), 0), 2)
+        if remaining > 0.005:
+            pending_debts.append({**d, 'amount': remaining})
     settled_debts    = [s for s in all_s if s['status'] == 'settled']
     unsettled_total  = round(sum(d['amount'] for d in pending_debts), 2)
     settled_total    = round(sum(s['amount'] for s in settled_debts), 2)

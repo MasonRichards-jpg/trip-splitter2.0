@@ -13,7 +13,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 
-DATA_FILE = os.path.join(os.path.dirname(__file__), 'data.json')
+DATA_FILE = os.environ.get('DATA_FILE', os.path.join(os.path.dirname(__file__), 'data.json'))
 SECRET_KEY = os.environ.get('SECRET_KEY', 'payback-dev-secret-change-me')
 _serializer = URLSafeTimedSerializer(SECRET_KEY)
 PAGE_SIZE = 10
@@ -608,19 +608,30 @@ def settle_debt(trip_id, debtor, creditor):
 def mark_all_settled(trip_id):
     balance_data     = get_balances(trip_id)
     trip_settlements = get_settlements(trip_id)
-    settled_pairs    = {(s['debtor'], s['creditor'])
+    settled_amounts  = {(s['debtor'], s['creditor']): s['amount']
                         for s in trip_settlements if s['status'] == 'settled'}
     today = datetime.today().strftime('%Y-%m-%d')
     for debt in balance_data['debts']:
-        if (debt['debtor'], debt['creditor']) not in settled_pairs:
-            settlements.append({
-                'trip_id':    trip_id,
-                'debtor':     debt['debtor'],
-                'creditor':   debt['creditor'],
-                'amount':     debt['amount'],
-                'status':     'settled',
-                'settled_on': today,
-            })
+        key = (debt['debtor'], debt['creditor'])
+        remaining = round(debt['amount'] - settled_amounts.get(key, 0), 2)
+        if remaining > 0.005:
+            # Update existing settlement record or create a new one
+            for s in settlements:
+                if (s.get('trip_id') == trip_id
+                        and s['debtor'] == debt['debtor']
+                        and s['creditor'] == debt['creditor']):
+                    s.update({'status': 'settled', 'settled_on': today,
+                              'amount': debt['amount']})
+                    break
+            else:
+                settlements.append({
+                    'trip_id':    trip_id,
+                    'debtor':     debt['debtor'],
+                    'creditor':   debt['creditor'],
+                    'amount':     debt['amount'],
+                    'status':     'settled',
+                    'settled_on': today,
+                })
     _save()
 
 
