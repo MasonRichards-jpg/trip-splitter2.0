@@ -29,11 +29,21 @@
     <a href="/settle-up" class="nav-item">
       <span class="ni">✓</span> <span>Settle Up</span>
     </a>
+    <a href="/trips" class="nav-item">
+      <span class="ni">⊹</span> <span>My Trips</span>
+    </a>
     <a href="/trip" class="nav-item">
       <span class="ni">✦</span> <span>Trip</span>
     </a>
   </nav>
   <div class="sidebar-bottom">
+    {% if current_user %}
+    <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--surface2);border-radius:var(--radius-sm);margin-bottom:12px">
+      <span class="av sm" style="--color:#6366f1">{{ current_user.name[0].upper() }}</span>
+      <span style="flex:1;font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)">{{ current_user.name }}</span>
+      <a href="/logout" style="font-size:11px;color:var(--muted);white-space:nowrap;padding:3px 7px;background:var(--surface);border:1px solid var(--border);border-radius:4px">Sign out</a>
+    </div>
+    {% endif %}
     <div class="trip-card">
       <div class="trip-card-top">
         <span class="trip-card-label">Active Trip</span>
@@ -42,8 +52,8 @@
       <div class="trip-card-name">{{ trip.cover }} {{ trip.name }}</div>
       <div class="trip-card-dates">{{ trip.start_date | fmtdate }} — {{ trip.end_date | fmtdate }}</div>
       <div class="trip-avatars">
-        {% for member in trip.members %}
-        <span class="av sm" style="--color:{{ loop.cycle('#6366f1', '#ec4899', '#14b8a6', '#f59e0b', '#22c55e', '#64748b', '#8b5cf6', '#f97316') }}">{{ member[0] }}</span>
+        {% for m in trip.members %}
+        <span class="av sm" style="--color:{{ member_color(m) }}">{{ m[0] }}</span>
         {% endfor %}
       </div>
     </div>
@@ -55,7 +65,7 @@
   <header class="topbar">
     <div class="topbar-left">
       <h1 class="page-title">Balances</h1>
-      <p class="page-sub">Who paid what · Fair share $656.90 per person</p>
+      <p class="page-sub">Who paid what · Fair share {{ balances.per_person | currency }} per person</p>
     </div>
     <div class="topbar-right">
       <a href="/settle-up" class="btn btn-primary btn-sm">Settle Up →</a>
@@ -64,170 +74,61 @@
 
   <div class="page-body">
 
+    {% if balances.members %}
+
     <!-- MEMBER BALANCE CARDS -->
     <div class="member-grid">
-
-      <!-- Alex -->
+      {% for name, stats in balances.members.items() %}
       <div class="member-card">
-        <span class="av lg" style="--color:#6366f1">A</span>
-        <div class="member-card-name">Alex</div>
+        <span class="av lg" style="--color:{{ member_color(name) }}">{{ name[0] }}</span>
+        <div class="member-card-name">{{ name }}</div>
         <div class="member-stats">
           <div class="member-stat-row">
             <span class="member-stat-label">Paid</span>
-            <span class="member-stat-val col-success">$842.00</span>
+            <span class="member-stat-val {{ 'col-success' if stats.net >= 0 else 'col-danger' }}">{{ stats.paid | currency }}</span>
           </div>
           <div class="member-stat-row">
             <span class="member-stat-label">Fair share</span>
-            <span class="member-stat-val">$656.90</span>
+            <span class="member-stat-val">{{ stats.share | currency }}</span>
           </div>
           <div class="member-divider"></div>
         </div>
-        <div class="member-net positive">+$185.10 owed to him</div>
+        {% set still_owes = pending_debts | selectattr('debtor', 'equalto', name) | list %}
+        {% set still_owed = pending_debts | selectattr('creditor', 'equalto', name) | list %}
+        {% if still_owed %}
+        <div class="member-net positive">+{{ still_owed | sum(attribute='amount') | currency }} still owed to {{ 'them' if name != current_user.name else 'you' }}</div>
+        {% elif still_owes %}
+        <div class="member-net negative">−{{ still_owes | sum(attribute='amount') | currency }} {{ 'still owes' if name != current_user.name else 'you still owe' }}</div>
+        {% elif stats.net > 0.005 or stats.net < -0.005 %}
+        <div class="member-net" style="color:var(--success);font-size:12px">✓ Settled</div>
+        {% else %}
+        <div class="member-net" style="color:var(--muted)">All even</div>
+        {% endif %}
       </div>
-
-      <!-- Sara -->
-      <div class="member-card">
-        <span class="av lg" style="--color:#ec4899">S</span>
-        <div class="member-card-name">Sara</div>
-        <div class="member-stats">
-          <div class="member-stat-row">
-            <span class="member-stat-label">Paid</span>
-            <span class="member-stat-val col-success">$720.50</span>
-          </div>
-          <div class="member-stat-row">
-            <span class="member-stat-label">Fair share</span>
-            <span class="member-stat-val">$656.90</span>
-          </div>
-          <div class="member-divider"></div>
-        </div>
-        <div class="member-net positive">+$63.60 owed to her</div>
-      </div>
-
-      <!-- Mike -->
-      <div class="member-card">
-        <span class="av lg" style="--color:#14b8a6">M</span>
-        <div class="member-card-name">Mike</div>
-        <div class="member-stats">
-          <div class="member-stat-row">
-            <span class="member-stat-label">Paid</span>
-            <span class="member-stat-val col-success">$795.00</span>
-          </div>
-          <div class="member-stat-row">
-            <span class="member-stat-label">Fair share</span>
-            <span class="member-stat-val">$656.90</span>
-          </div>
-          <div class="member-divider"></div>
-        </div>
-        <div class="member-net positive">+$138.10 owed to him</div>
-      </div>
-
-      <!-- Jess -->
-      <div class="member-card">
-        <span class="av lg" style="--color:#f59e0b">J</span>
-        <div class="member-card-name">Jess</div>
-        <div class="member-stats">
-          <div class="member-stat-row">
-            <span class="member-stat-label">Paid</span>
-            <span class="member-stat-val col-danger">$518.00</span>
-          </div>
-          <div class="member-stat-row">
-            <span class="member-stat-label">Fair share</span>
-            <span class="member-stat-val">$656.90</span>
-          </div>
-          <div class="member-divider"></div>
-        </div>
-        <div class="member-net negative">−$138.90 she owes</div>
-      </div>
-
-      <!-- Leo -->
-      <div class="member-card">
-        <span class="av lg" style="--color:#22c55e">L</span>
-        <div class="member-card-name">Leo</div>
-        <div class="member-stats">
-          <div class="member-stat-row">
-            <span class="member-stat-label">Paid</span>
-            <span class="member-stat-val col-danger">$409.00</span>
-          </div>
-          <div class="member-stat-row">
-            <span class="member-stat-label">Fair share</span>
-            <span class="member-stat-val">$656.90</span>
-          </div>
-          <div class="member-divider"></div>
-        </div>
-        <div class="member-net negative">−$247.90 he owes</div>
-      </div>
-
+      {% endfor %}
     </div>
 
     <!-- CONTRIBUTION BREAKDOWN -->
     <div class="card">
       <div class="card-head">
         <span class="card-title">Contribution Breakdown</span>
-        <span style="font-size:12px;color:var(--muted)">Total: $3,284.50</span>
+        <span style="font-size:12px;color:var(--muted)">Total: {{ balances.total | currency }}</span>
       </div>
       <div class="card-body">
         <div class="contrib-section">
-
+          {% for name, stats in balances.members.items() %}
           <div class="contrib-row">
-            <span class="av sm" style="--color:#6366f1">A</span>
+            <span class="av sm" style="--color:{{ member_color(name) }}">{{ name[0] }}</span>
             <div class="contrib-meta">
-              <span class="contrib-name">Alex</span>
-              <span class="contrib-sub">$842.00 paid · 6 expenses</span>
+              <span class="contrib-name">{{ name }}</span>
+              <span class="contrib-sub">{{ stats.paid | currency }} paid · {{ stats.count }} expense{{ 's' if stats.count != 1 else '' }}</span>
             </div>
             <div class="contrib-bar-track">
-              <div class="contrib-bar" style="width:25.6%;background:#6366f1"></div>
+              <div class="contrib-bar" style="width:{{ stats.pct }}%;background:{{ member_color(name) }}"></div>
             </div>
-            <span class="contrib-val col-success">25.6%</span>
+            <span class="contrib-val {{ 'col-success' if stats.net >= 0 else 'col-danger' }}">{{ stats.pct }}%</span>
           </div>
-
-          <div class="contrib-row">
-            <span class="av sm" style="--color:#ec4899">S</span>
-            <div class="contrib-meta">
-              <span class="contrib-name">Sara</span>
-              <span class="contrib-sub">$720.50 paid · 4 expenses</span>
-            </div>
-            <div class="contrib-bar-track">
-              <div class="contrib-bar" style="width:21.9%;background:#ec4899"></div>
-            </div>
-            <span class="contrib-val col-success">21.9%</span>
-          </div>
-
-          <div class="contrib-row">
-            <span class="av sm" style="--color:#14b8a6">M</span>
-            <div class="contrib-meta">
-              <span class="contrib-name">Mike</span>
-              <span class="contrib-sub">$795.00 paid · 5 expenses</span>
-            </div>
-            <div class="contrib-bar-track">
-              <div class="contrib-bar" style="width:24.2%;background:#14b8a6"></div>
-            </div>
-            <span class="contrib-val col-success">24.2%</span>
-          </div>
-
-          <div class="contrib-row">
-            <span class="av sm" style="--color:#f59e0b">J</span>
-            <div class="contrib-meta">
-              <span class="contrib-name">Jess</span>
-              <span class="contrib-sub">$518.00 paid · 2 expenses</span>
-            </div>
-            <div class="contrib-bar-track">
-              <div class="contrib-bar" style="width:15.8%;background:#f59e0b"></div>
-            </div>
-            <span class="contrib-val col-danger">15.8%</span>
-          </div>
-
-          <div class="contrib-row">
-            <span class="av sm" style="--color:#22c55e">L</span>
-            <div class="contrib-meta">
-              <span class="contrib-name">Leo</span>
-              <span class="contrib-sub">$409.00 paid · 1 expense</span>
-            </div>
-            <div class="contrib-bar-track">
-              <div class="contrib-bar" style="width:12.5%;background:#22c55e"></div>
-            </div>
-            <span class="contrib-val col-danger">12.5%</span>
-          </div>
-
+          {% endfor %}
         </div>
       </div>
     </div>
@@ -238,15 +139,14 @@
         <span class="card-title">Transaction Log</span>
         <form method="GET" action="/balances" style="display:flex;gap:8px">
           <select class="form-select" name="member" style="width:auto;padding:4px 10px;font-size:12px" onchange="this.form.submit()">
-            <option value="all">All members</option>
-            <option value="Alex">Alex</option>
-            <option value="Sara">Sara</option>
-            <option value="Mike">Mike</option>
-            <option value="Jess">Jess</option>
-            <option value="Leo">Leo</option>
+            <option value="all" {% if member == 'all' %}selected{% endif %}>All members</option>
+            {% for m in trip.members %}
+            <option value="{{ m }}" {% if member == m %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
           </select>
         </form>
       </div>
+      {% if balances.transactions %}
       <div style="overflow-x:auto">
         <table class="txn-table">
           <thead>
@@ -255,73 +155,50 @@
               <th>Description</th>
               <th>Paid by</th>
               <th>Amount</th>
-              <th>Alex</th>
-              <th>Sara</th>
-              <th>Mike</th>
-              <th>Jess</th>
-              <th>Leo</th>
+              {% for m in trip.members %}
+              <th>{{ m }}</th>
+              {% endfor %}
             </tr>
           </thead>
           <tbody>
+            {% for txn in balances.transactions %}
             <tr>
-              <td style="color:var(--muted);font-size:12px;white-space:nowrap">Jun 14</td>
-              <td style="font-weight:500">Dinner at Sarong</td>
-              <td><div style="display:flex;align-items:center;gap:6px"><span class="av sm" style="--color:#6366f1">A</span> Alex</div></td>
-              <td style="font-weight:700">$186.00</td>
-              <td style="color:var(--success);font-size:12px">+$148.80</td>
-              <td style="color:var(--danger);font-size:12px">−$37.20</td>
-              <td style="color:var(--danger);font-size:12px">−$37.20</td>
-              <td style="color:var(--danger);font-size:12px">−$37.20</td>
-              <td style="color:var(--danger);font-size:12px">−$37.20</td>
+              <td style="color:var(--muted);font-size:12px;white-space:nowrap">{{ txn.date | fmtdate }}</td>
+              <td style="font-weight:500">{{ txn.description }}</td>
+              <td>
+                <div style="display:flex;align-items:center;gap:6px">
+                  <span class="av sm" style="--color:{{ member_color(txn.paid_by) }}">{{ txn.paid_by[0] }}</span>
+                  {{ txn.paid_by }}
+                </div>
+              </td>
+              <td style="font-weight:700">{{ txn.amount | currency }}</td>
+              {% for m in trip.members %}
+              {% set v = txn.splits.get(m, 0) %}
+              <td style="font-size:12px;color:{{ 'var(--success)' if v > 0.005 else ('var(--danger)' if v < -0.005 else 'var(--muted)') }}">
+                {% if v > 0.005 %}+{{ v | currency }}
+                {% elif v < -0.005 %}−{{ (v | abs) | currency }}
+                {% else %}—{% endif %}
+              </td>
+              {% endfor %}
             </tr>
-            <tr>
-              <td style="color:var(--muted);font-size:12px;white-space:nowrap">Jun 14</td>
-              <td style="font-weight:500">Scooter Rental × 5</td>
-              <td><div style="display:flex;align-items:center;gap:6px"><span class="av sm" style="--color:#ec4899">S</span> Sara</div></td>
-              <td style="font-weight:700">$120.00</td>
-              <td style="color:var(--danger);font-size:12px">−$24.00</td>
-              <td style="color:var(--success);font-size:12px">+$96.00</td>
-              <td style="color:var(--danger);font-size:12px">−$24.00</td>
-              <td style="color:var(--danger);font-size:12px">−$24.00</td>
-              <td style="color:var(--danger);font-size:12px">−$24.00</td>
-            </tr>
-            <tr>
-              <td style="color:var(--muted);font-size:12px;white-space:nowrap">Jun 15</td>
-              <td style="font-weight:500">Villa Ubud — Night 3</td>
-              <td><div style="display:flex;align-items:center;gap:6px"><span class="av sm" style="--color:#14b8a6">M</span> Mike</div></td>
-              <td style="font-weight:700">$350.00</td>
-              <td style="color:var(--danger);font-size:12px">−$70.00</td>
-              <td style="color:var(--danger);font-size:12px">−$70.00</td>
-              <td style="color:var(--success);font-size:12px">+$280.00</td>
-              <td style="color:var(--danger);font-size:12px">−$70.00</td>
-              <td style="color:var(--danger);font-size:12px">−$70.00</td>
-            </tr>
-            <tr>
-              <td style="color:var(--muted);font-size:12px;white-space:nowrap">Jun 16</td>
-              <td style="font-weight:500">Surf Lesson — Kuta</td>
-              <td><div style="display:flex;align-items:center;gap:6px"><span class="av sm" style="--color:#f59e0b">J</span> Jess</div></td>
-              <td style="font-weight:700">$225.00</td>
-              <td style="color:var(--danger);font-size:12px">−$45.00</td>
-              <td style="color:var(--danger);font-size:12px">−$45.00</td>
-              <td style="color:var(--danger);font-size:12px">−$45.00</td>
-              <td style="color:var(--success);font-size:12px">+$180.00</td>
-              <td style="color:var(--danger);font-size:12px">−$45.00</td>
-            </tr>
-            <tr>
-              <td style="color:var(--muted);font-size:12px;white-space:nowrap">Jun 16</td>
-              <td style="font-weight:500">Café Breakfasts</td>
-              <td><div style="display:flex;align-items:center;gap:6px"><span class="av sm" style="--color:#22c55e">L</span> Leo</div></td>
-              <td style="font-weight:700">$64.50</td>
-              <td style="color:var(--danger);font-size:12px">−$12.90</td>
-              <td style="color:var(--danger);font-size:12px">−$12.90</td>
-              <td style="color:var(--danger);font-size:12px">−$12.90</td>
-              <td style="color:var(--danger);font-size:12px">−$12.90</td>
-              <td style="color:var(--success);font-size:12px">+$51.60</td>
-            </tr>
+            {% endfor %}
           </tbody>
         </table>
       </div>
+      {% else %}
+      <div class="card-body" style="text-align:center;padding:40px;color:var(--muted)">
+        No transactions match your filter.
+      </div>
+      {% endif %}
     </div>
+
+    {% else %}
+    <div class="card">
+      <div class="card-body" style="text-align:center;padding:48px;color:var(--muted)">
+        No members yet. <a href="/trip" style="color:var(--accent-lt)">Add members to your trip →</a>
+      </div>
+    </div>
+    {% endif %}
 
   </div>
 </div>

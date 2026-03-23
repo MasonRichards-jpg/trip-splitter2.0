@@ -9,6 +9,9 @@
 </head>
 <body>
 
+{% set cat_icons = {'food': '🍜', 'stay': '🏨', 'transport': '🏍', 'activity': '🌊', 'shopping': '🛍', 'other': '··'} %}
+{% set cat_colors = {'food': '#ec4899', 'stay': '#6366f1', 'transport': '#f59e0b', 'activity': '#14b8a6', 'shopping': '#22c55e', 'other': '#64748b'} %}
+
 <!-- SIDEBAR -->
 <aside class="sidebar">
   <div class="sidebar-brand">
@@ -30,12 +33,20 @@
     <a href="/settle-up" class="nav-item">
       <span class="ni">✓</span> <span>Settle Up</span>
     </a>
+    <a href="/trips" class="nav-item"><span class="ni">⊹</span> <span>My Trips</span></a>
     <a href="/trip" class="nav-item">
       <span class="ni">✦</span> <span>Trip</span>
     </a>
   </nav>
 
   <div class="sidebar-bottom">
+    {% if current_user %}
+    <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--surface2);border-radius:var(--radius-sm);margin-bottom:12px">
+      <span class="av sm" style="--color:#6366f1">{{ current_user.name[0].upper() }}</span>
+      <span style="flex:1;font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)">{{ current_user.name }}</span>
+      <a href="/logout" style="font-size:11px;color:var(--muted);white-space:nowrap;padding:3px 7px;background:var(--surface);border:1px solid var(--border);border-radius:4px">Sign out</a>
+    </div>
+    {% endif %}
     <div class="trip-card">
       <div class="trip-card-top">
         <span class="trip-card-label">Active Trip</span>
@@ -45,7 +56,7 @@
       <div class="trip-card-dates">{{ trip.start_date | fmtdate }} — {{ trip.end_date | fmtdate }}</div>
       <div class="trip-avatars">
         {% for member in trip.members %}
-        <span class="av sm" style="--color:{{ loop.cycle('#6366f1', '#ec4899', '#14b8a6', '#f59e0b', '#22c55e', '#64748b', '#8b5cf6', '#f97316') }}">{{ member[0] }}</span>
+        <span class="av sm" style="--color:{{ member_color(member) }}">{{ member[0] }}</span>
         {% endfor %}
       </div>
     </div>
@@ -62,7 +73,7 @@
       <p class="page-sub">{{ trip.name }} · {{ trip.members | length }} members · {{ trip.start_date | fmtdate }} – {{ trip.end_date | fmtdate }}</p>
     </div>
     <div class="topbar-right">
-      <button class="btn btn-ghost btn-sm">Export CSV</button>
+      <a href="/expenses/export" class="btn btn-ghost btn-sm">Export CSV</a>
       <a href="/expenses" class="btn btn-primary btn-sm">+ Add Expense</a>
     </div>
   </header>
@@ -71,53 +82,57 @@
   <div class="page-body">
 
     <!-- STAT CARDS -->
+    {% set budget_left = trip.budget - balances.total %}
     <div class="stats-row">
       <div class="stat-card">
         <div class="stat-card-label">Total Spent</div>
-        <div class="stat-card-value">$3,284.50</div>
-        <div class="stat-card-sub col-muted">across 18 expenses</div>
+        <div class="stat-card-value">{{ balances.total | currency }}</div>
+        <div class="stat-card-sub col-muted">across {{ total_count }} expense{{ 's' if total_count != 1 else '' }}</div>
       </div>
       <div class="stat-card">
         <div class="stat-card-label">Per Person</div>
-        <div class="stat-card-value">$656.90</div>
-        <div class="stat-card-sub col-muted">5 members</div>
+        <div class="stat-card-value">{{ balances.per_person | currency }}</div>
+        <div class="stat-card-sub col-muted">{{ trip.members | length }} members</div>
       </div>
       <div class="stat-card">
         <div class="stat-card-label">Budget Left</div>
-        <div class="stat-card-value col-success">$715.50</div>
-        <div class="stat-card-sub col-muted">of $4,000 total</div>
+        <div class="stat-card-value {{ 'col-danger' if budget_left < 0 else 'col-success' }}">{{ budget_left | currency }}</div>
+        <div class="stat-card-sub col-muted">of {{ trip.budget | currency }} total</div>
       </div>
       <div class="stat-card">
         <div class="stat-card-label">Unsettled</div>
-        <div class="stat-card-value col-warning">$342.00</div>
-        <div class="stat-card-sub col-muted">3 debts pending</div>
+        <div class="stat-card-value col-warning">{{ unsettled_amount | currency }}</div>
+        <div class="stat-card-sub col-muted">{{ pending_debts | length }} debt{{ 's' if pending_debts | length != 1 else '' }} pending</div>
       </div>
     </div>
 
     <!-- BUDGET PROGRESS -->
+    {% if trip.budget > 0 %}
+    {% set budget_pct = [((balances.total / trip.budget * 100) | round | int), 100] | min %}
     <div class="card">
       <div class="card-body">
         <div class="progress-wrap">
           <div class="progress-header">
-            <span>Budget Usage — <strong>$3,284.50</strong> of $4,000.00 spent</span>
-            <strong style="color:var(--accent-lt)">82%</strong>
+            <span>Budget Usage — <strong>{{ balances.total | currency }}</strong> of {{ trip.budget | currency }} spent</span>
+            <strong style="color:var(--accent-lt)">{{ budget_pct }}%</strong>
           </div>
           <div class="progress-track">
-            <div class="progress-fill" style="width:82%"></div>
+            <div class="progress-fill {{ 'warn' if budget_pct > 80 else '' }}" style="width:{{ budget_pct }}%"></div>
           </div>
           <div style="display:flex;gap:18px;font-size:12px;color:var(--muted)">
             <span style="display:flex;align-items:center;gap:5px">
               <span style="width:8px;height:8px;border-radius:50%;background:#6366f1;display:inline-block"></span>
-              Spent $3,284.50
+              Spent {{ balances.total | currency }}
             </span>
             <span style="display:flex;align-items:center;gap:5px">
               <span style="width:8px;height:8px;border-radius:50%;background:var(--surface2);border:1px solid var(--border2);display:inline-block"></span>
-              Remaining $715.50
+              Remaining {{ budget_left | currency }}
             </span>
           </div>
         </div>
       </div>
     </div>
+    {% endif %}
 
     <!-- CONTENT GRID -->
     <div class="content-grid">
@@ -128,74 +143,27 @@
           <span class="card-title">Recent Expenses</span>
           <a href="/expenses" class="card-link">View all →</a>
         </div>
+        {% if recent_expenses %}
         <div class="expense-list">
+          {% for e in recent_expenses %}
           <div class="expense-row">
-            <div class="expense-cat-icon cat-food">🍜</div>
+            <div class="expense-cat-icon cat-{{ e.category }}">{{ cat_icons.get(e.category, '·') }}</div>
             <div class="expense-info">
-              <div class="expense-name">Dinner at Sarong</div>
-              <div class="expense-meta">Paid by <b>Alex</b> · Jun 14 · Split 5 ways</div>
+              <div class="expense-name">{{ e.description }}</div>
+              <div class="expense-meta">Paid by <b>{{ e.paid_by }}</b> · {{ e.date | fmtdate }} · Split {{ e.split | length }} way{{ 's' if e.split | length != 1 else '' }}</div>
             </div>
             <div class="expense-right">
-              <div class="expense-amount">$186.00</div>
-              <span class="tag tag-food">Food</span>
+              <div class="expense-amount">{{ e.amount | currency }}</div>
+              <span class="tag tag-{{ e.category }}">{{ e.category | capitalize }}</span>
             </div>
           </div>
-          <div class="expense-row">
-            <div class="expense-cat-icon cat-transport">🏍</div>
-            <div class="expense-info">
-              <div class="expense-name">Scooter Rental × 5</div>
-              <div class="expense-meta">Paid by <b>Sara</b> · Jun 14 · Split 5 ways</div>
-            </div>
-            <div class="expense-right">
-              <div class="expense-amount">$120.00</div>
-              <span class="tag tag-transport">Transport</span>
-            </div>
-          </div>
-          <div class="expense-row">
-            <div class="expense-cat-icon cat-stay">🏨</div>
-            <div class="expense-info">
-              <div class="expense-name">Villa Ubud — Night 3</div>
-              <div class="expense-meta">Paid by <b>Mike</b> · Jun 15 · Split 5 ways</div>
-            </div>
-            <div class="expense-right">
-              <div class="expense-amount">$350.00</div>
-              <span class="tag tag-stay">Stay</span>
-            </div>
-          </div>
-          <div class="expense-row">
-            <div class="expense-cat-icon cat-activity">🌊</div>
-            <div class="expense-info">
-              <div class="expense-name">Surf Lesson — Kuta Beach</div>
-              <div class="expense-meta">Paid by <b>Jess</b> · Jun 16 · Split 5 ways</div>
-            </div>
-            <div class="expense-right">
-              <div class="expense-amount">$225.00</div>
-              <span class="tag tag-activity">Activity</span>
-            </div>
-          </div>
-          <div class="expense-row">
-            <div class="expense-cat-icon cat-food">☕</div>
-            <div class="expense-info">
-              <div class="expense-name">Café Breakfasts</div>
-              <div class="expense-meta">Paid by <b>Leo</b> · Jun 16 · Split 5 ways</div>
-            </div>
-            <div class="expense-right">
-              <div class="expense-amount">$64.50</div>
-              <span class="tag tag-food">Food</span>
-            </div>
-          </div>
-          <div class="expense-row">
-            <div class="expense-cat-icon cat-shopping">🛍</div>
-            <div class="expense-info">
-              <div class="expense-name">Ubud Market Souvenirs</div>
-              <div class="expense-meta">Paid by <b>Alex</b> · Jun 17 · Split 3 ways</div>
-            </div>
-            <div class="expense-right">
-              <div class="expense-amount">$95.00</div>
-              <span class="tag tag-shopping">Shopping</span>
-            </div>
-          </div>
+          {% endfor %}
         </div>
+        {% else %}
+        <div class="card-body" style="color:var(--muted);text-align:center;padding:32px">
+          No expenses yet. <a href="/expenses" style="color:var(--accent-lt)">Add one →</a>
+        </div>
+        {% endif %}
       </div>
 
       <!-- RIGHT COL -->
@@ -207,48 +175,22 @@
             <span class="card-title">By Category</span>
           </div>
           <div class="card-body">
+            {% if balances.category_totals %}
             <div class="cat-breakdown">
+              {% for cat, info in balances.category_totals.items() %}
               <div class="cat-row">
                 <div class="cat-row-left">
-                  <span class="cat-dot" style="background:#6366f1"></span>
-                  <span>Stay</span>
+                  <span class="cat-dot" style="background:{{ cat_colors.get(cat, '#64748b') }}"></span>
+                  <span>{{ cat | capitalize }}</span>
                 </div>
-                <div class="cat-bar-track"><div class="cat-bar" style="width:42%;background:#6366f1"></div></div>
-                <span class="cat-pct">42%</span>
+                <div class="cat-bar-track"><div class="cat-bar" style="width:{{ info.pct }}%;background:{{ cat_colors.get(cat, '#64748b') }}"></div></div>
+                <span class="cat-pct">{{ info.pct }}%</span>
               </div>
-              <div class="cat-row">
-                <div class="cat-row-left">
-                  <span class="cat-dot" style="background:#ec4899"></span>
-                  <span>Food</span>
-                </div>
-                <div class="cat-bar-track"><div class="cat-bar" style="width:28%;background:#ec4899"></div></div>
-                <span class="cat-pct">28%</span>
-              </div>
-              <div class="cat-row">
-                <div class="cat-row-left">
-                  <span class="cat-dot" style="background:#14b8a6"></span>
-                  <span>Activity</span>
-                </div>
-                <div class="cat-bar-track"><div class="cat-bar" style="width:18%;background:#14b8a6"></div></div>
-                <span class="cat-pct">18%</span>
-              </div>
-              <div class="cat-row">
-                <div class="cat-row-left">
-                  <span class="cat-dot" style="background:#f59e0b"></span>
-                  <span>Transport</span>
-                </div>
-                <div class="cat-bar-track"><div class="cat-bar" style="width:8%;background:#f59e0b"></div></div>
-                <span class="cat-pct">8%</span>
-              </div>
-              <div class="cat-row">
-                <div class="cat-row-left">
-                  <span class="cat-dot" style="background:#64748b"></span>
-                  <span>Other</span>
-                </div>
-                <div class="cat-bar-track"><div class="cat-bar" style="width:4%;background:#64748b"></div></div>
-                <span class="cat-pct">4%</span>
-              </div>
+              {% endfor %}
             </div>
+            {% else %}
+            <div style="color:var(--muted);font-size:13px;text-align:center;padding:16px 0">No data yet</div>
+            {% endif %}
           </div>
         </div>
 
@@ -258,35 +200,25 @@
             <span class="card-title">Who Owes Who</span>
             <a href="/settle-up" class="card-link">Settle →</a>
           </div>
+          {% if pending_debts %}
           <div class="balance-rows">
+            {% for debt in pending_debts %}
             <div class="balance-row">
               <div class="balance-av-pair">
-                <span class="av sm" style="--color:#ec4899">S</span>
+                <span class="av sm" style="--color:{{ member_color(debt.debtor) }}">{{ debt.debtor[0] }}</span>
                 <span class="balance-arrow">→</span>
-                <span class="av sm" style="--color:#6366f1">A</span>
+                <span class="av sm" style="--color:{{ member_color(debt.creditor) }}">{{ debt.creditor[0] }}</span>
               </div>
-              <span class="balance-desc"><b>Sara</b> owes <b>Alex</b></span>
-              <span class="balance-amt">$74.00</span>
+              <span class="balance-desc"><b>{{ debt.debtor }}</b> owes <b>{{ debt.creditor }}</b></span>
+              <span class="balance-amt">{{ debt.amount | currency }}</span>
             </div>
-            <div class="balance-row">
-              <div class="balance-av-pair">
-                <span class="av sm" style="--color:#f59e0b">J</span>
-                <span class="balance-arrow">→</span>
-                <span class="av sm" style="--color:#14b8a6">M</span>
-              </div>
-              <span class="balance-desc"><b>Jess</b> owes <b>Mike</b></span>
-              <span class="balance-amt">$140.00</span>
-            </div>
-            <div class="balance-row">
-              <div class="balance-av-pair">
-                <span class="av sm" style="--color:#22c55e">L</span>
-                <span class="balance-arrow">→</span>
-                <span class="av sm" style="--color:#ec4899">S</span>
-              </div>
-              <span class="balance-desc"><b>Leo</b> owes <b>Sara</b></span>
-              <span class="balance-amt">$128.00</span>
-            </div>
+            {% endfor %}
           </div>
+          {% else %}
+          <div class="card-body" style="color:var(--muted);font-size:13px;text-align:center;padding:20px">
+            {{ '🎉 All settled up!' if balances.total > 0 else 'No debts yet' }}
+          </div>
+          {% endif %}
         </div>
 
       </div><!-- /right-col -->

@@ -1208,12 +1208,19 @@ a { text-decoration: none; color: inherit; }
 
 /* Glass cards */
 .card,
-.stat-card,
 .member-card,
 .debt-card {
-  background: rgba(12, 16, 34, 0.58);
+  background: rgba(12, 16, 34, 0.72);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
+}
+
+/* Stat cards need a heavier background so the globe glare doesn't bleed through */
+.stat-card {
+  background: rgba(10, 13, 30, 0.88);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow: 0 2px 16px rgba(0,0,0,0.35);
 }
 
 /* Trip card in sidebar */

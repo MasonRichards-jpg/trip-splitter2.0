@@ -1,121 +1,663 @@
-# ── In-memory data store (replace with a real DB later) ───────────────────────
+import csv
+import io
+import json
+import os
+import smtplib
+import threading
+from datetime import datetime
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
-trip = {
-    'name': 'Bali 2025',
-    'destination': 'Bali, Indonesia',
-    'start_date': '2025-06-12',
-    'end_date': '2025-06-22',
-    'currency': 'USD',
-    'cover': '🌴',
-    'description': '10-day group vacation to Bali.',
-    'budget': 4000.00,
-    'split_method': 'equal',
-    'members': ['Alex', 'Sara', 'Mike', 'Jess', 'Leo'],
-}
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
+from werkzeug.security import check_password_hash, generate_password_hash
 
-expenses = []       # list of expense dicts
-settlements = []    # list of settled debt dicts
+# ── Config ─────────────────────────────────────────────────────────────────────
 
+DATA_FILE = os.path.join(os.path.dirname(__file__), 'data.json')
+SECRET_KEY = os.environ.get('SECRET_KEY', 'payback-dev-secret-change-me')
+_serializer = URLSafeTimedSerializer(SECRET_KEY)
+PAGE_SIZE = 10
 
-# ── Expenses ──────────────────────────────────────────────────────────────────
+# ── In-memory state ────────────────────────────────────────────────────────────
 
-def get_expenses(sort=None, search=None, cat_filter=None, page=1):
-    """Return filtered, sorted, paginated list of expenses."""
-    pass
-
-def add_expense(description, amount, date, paid_by, category, split, notes=''):
-    """Create a new expense and append it to the expenses list."""
-    pass
-
-def get_expense(expense_id):
-    """Return a single expense by its ID, or None if not found."""
-    pass
-
-def update_expense(expense_id, **fields):
-    """Update fields on an existing expense."""
-    pass
-
-def delete_expense(expense_id):
-    """Remove an expense by ID. Returns True on success."""
-    pass
-
-def export_csv():
-    """Return expenses as a CSV string for download."""
-    pass
+trips = []
+expenses = []
+settlements = []
+users = []
+_next_id = 1
+_next_user_id = 1
+_next_trip_id = 1
 
 
-# ── Trip ──────────────────────────────────────────────────────────────────────
+# ── Persistence ────────────────────────────────────────────────────────────────
 
-def get_trip():
-    """Return the current trip dict."""
-    return trip
+def _make_default_trip(owner_id, name='My Trip', trip_id=1):
+    return {
+        'id':             trip_id,
+        'name':           name,
+        'owner_id':       owner_id,
+        'member_user_ids': [owner_id],
+        'destination':    '',
+        'start_date':     datetime.today().strftime('%Y-%m-%d'),
+        'end_date':       datetime.today().strftime('%Y-%m-%d'),
+        'currency':       'USD',
+        'cover':          '✈️',
+        'description':    '',
+        'budget':         0.0,
+        'split_method':   'equal',
+        'members':        [],
+    }
 
-def save_trip(trip_name, destination, start_date, end_date,
+
+def _load():
+    global trips, expenses, settlements, users, _next_id, _next_user_id, _next_trip_id
+    if not os.path.exists(DATA_FILE):
+        return
+    try:
+        with open(DATA_FILE) as f:
+            d = json.load(f)
+        users[:] = d.get('users', [])
+        _next_user_id = d.get('next_user_id', 1)
+        _next_id      = d.get('next_id', 1)
+        _next_trip_id = d.get('next_trip_id', 1)
+
+        # ── Migrate old single-trip format ──────────────────────────────────
+        if 'trip' in d and 'trips' not in d:
+            old = d['trip']
+            old['id']             = 1
+            old['owner_id']       = users[0]['id'] if users else 1
+            old['member_user_ids'] = [u['id'] for u in users]
+            if 'members' not in old:
+                old['members'] = []
+            # Add owner display name if missing
+            owner = next((u for u in users if u['id'] == old['owner_id']), None)
+            if owner and owner['name'] not in old['members']:
+                old['members'].insert(0, owner['name'])
+            trips[:] = [old]
+            _next_trip_id = max(_next_trip_id, 2)
+            # Stamp trip_id onto old expenses/settlements
+            raw_expenses    = d.get('expenses', [])
+            raw_settlements = d.get('settlements', [])
+            for e in raw_expenses:
+                e.setdefault('trip_id', 1)
+            for s in raw_settlements:
+                s.setdefault('trip_id', 1)
+            expenses[:]    = raw_expenses
+            settlements[:] = raw_settlements
+        else:
+            trips[:]       = d.get('trips', [])
+            expenses[:]    = d.get('expenses', [])
+            settlements[:] = d.get('settlements', [])
+
+    except Exception as e:
+        print(f'[PayBack] Failed to load data: {e}')
+
+
+def _save():
+    data = {
+        'trips':        trips,
+        'expenses':     expenses,
+        'settlements':  settlements,
+        'users':        users,
+        'next_id':      _next_id,
+        'next_user_id': _next_user_id,
+        'next_trip_id': _next_trip_id,
+    }
+    with open(DATA_FILE, 'w') as f:
+        json.dump(data, f, indent=2)
+
+
+_load()
+
+
+# ── Users ──────────────────────────────────────────────────────────────────────
+
+def get_user_by_email(email):
+    email = email.strip().lower()
+    return next((u for u in users if u['email'] == email), None)
+
+
+def get_user_by_id(user_id):
+    return next((u for u in users if u['id'] == user_id), None)
+
+
+def create_user(name, email, password):
+    global _next_user_id
+    email = email.strip().lower()
+    if get_user_by_email(email):
+        return None, 'Email already registered'
+    user = {
+        'id':            _next_user_id,
+        'name':          name.strip(),
+        'email':         email,
+        'password_hash': generate_password_hash(password),
+        'created_at':    datetime.today().strftime('%Y-%m-%d'),
+    }
+    _next_user_id += 1
+    users.append(user)
+    _save()
+    return user, None
+
+
+def verify_user(email, password):
+    user = get_user_by_email(email)
+    if user and check_password_hash(user['password_hash'], password):
+        return user
+    return None
+
+
+# ── Trips ──────────────────────────────────────────────────────────────────────
+
+def get_trip(trip_id):
+    return next((t for t in trips if t['id'] == trip_id), None)
+
+
+def get_user_trips(user_id):
+    """Return all trips the user owns or is a member of."""
+    return [t for t in trips if user_id in t.get('member_user_ids', [])]
+
+
+def create_trip(owner_id, name='My Trip'):
+    global _next_trip_id
+    owner = get_user_by_id(owner_id)
+    t = _make_default_trip(owner_id, name, _next_trip_id)
+    if owner and owner['name'] not in t['members']:
+        t['members'] = [owner['name']]
+    _next_trip_id += 1
+    trips.append(t)
+    _save()
+    return t
+
+
+def save_trip(trip_id, trip_name, destination, start_date, end_date,
               currency, cover, description, budget, split_method):
-    """Overwrite trip fields with new values. Members are managed separately."""
-    global trip
-    trip.update({
-        'name': trip_name,
-        'destination': destination,
-        'start_date': start_date,
-        'end_date': end_date,
-        'currency': currency,
-        'cover': cover,
-        'description': description,
-        'budget': float(str(budget).replace(',', '')),
+    t = get_trip(trip_id)
+    if not t:
+        return
+    t.update({
+        'name':         trip_name.strip(),
+        'destination':  destination.strip(),
+        'start_date':   start_date,
+        'end_date':     end_date,
+        'currency':     currency,
+        'cover':        cover,
+        'description':  description.strip(),
+        'budget':       round(float(str(budget).replace(',', '')), 2),
         'split_method': split_method,
     })
-    
-
-def create_new_trip():
-    """Reset the trip and expenses to defaults for a fresh trip."""
-    pass
-
-def reset_expenses():
-    """Clear all expenses without deleting the trip."""
-    pass
-
-def delete_trip():
-    """Delete the current trip and all associated expenses."""
-    pass
+    _save()
 
 
-# ── Members ───────────────────────────────────────────────────────────────────
-
-def add_member(name_or_email):
-    """Add a new member to the trip's member list."""
-    pass
-
-def remove_member(name):
-    """Remove a member from the trip by name."""
-    pass
+def reset_expenses(trip_id):
+    global expenses, settlements, _next_id
+    expenses[:]    = [e for e in expenses    if e.get('trip_id') != trip_id]
+    settlements[:] = [s for s in settlements if s.get('trip_id') != trip_id]
+    _save()
 
 
-# ── Balances ──────────────────────────────────────────────────────────────────
-
-def get_balances(member=None):
-    """
-    Calculate how much each member paid vs. their fair share.
-    If member is given, filter the transaction log to that member.
-    Returns a dict with member stats and a list of who-owes-who debts.
-    """
-    pass
+def delete_trip(trip_id):
+    global trips, expenses, settlements
+    trips[:]       = [t for t in trips       if t['id'] != trip_id]
+    expenses[:]    = [e for e in expenses    if e.get('trip_id') != trip_id]
+    settlements[:] = [s for s in settlements if s.get('trip_id') != trip_id]
+    _save()
 
 
-# ── Settle Up ─────────────────────────────────────────────────────────────────
+# ── Members ────────────────────────────────────────────────────────────────────
 
-def get_settlements():
-    """Return all pending and completed settlements."""
-    return settlements
+def add_member(trip_id, display_name, user_id=None):
+    t = get_trip(trip_id)
+    if not t:
+        return
+    name = display_name.strip()
+    if name and name not in t['members']:
+        t['members'].append(name)
+    if user_id and user_id not in t.get('member_user_ids', []):
+        t.setdefault('member_user_ids', []).append(user_id)
+    _save()
 
-def settle_debt(debtor, creditor):
-    """Mark the debt from debtor → creditor as settled."""
-    pass
 
-def mark_all_settled():
-    """Mark every pending debt as settled."""
-    pass
+def remove_member(trip_id, name):
+    t = get_trip(trip_id)
+    if not t:
+        return
+    name = name.strip()
+    if name in t['members']:
+        t['members'].remove(name)
+    _save()
 
-def send_reminder(debtor):
-    """Send a reminder notification to the debtor (email / push / etc.)."""
-    pass
+
+def rename_member(trip_id, old_name, new_name):
+    t = get_trip(trip_id)
+    if not t:
+        return
+    old_name = old_name.strip()
+    new_name = new_name.strip()
+    if not new_name or old_name not in t['members']:
+        return
+    idx = t['members'].index(old_name)
+    t['members'][idx] = new_name
+    # Update all expenses that reference the old name
+    for e in expenses:
+        if e.get('trip_id') == trip_id:
+            if e['paid_by'] == old_name:
+                e['paid_by'] = new_name
+            e['split'] = [new_name if m == old_name else m for m in e['split']]
+    # Update settlements
+    for s in settlements:
+        if s.get('trip_id') == trip_id:
+            if s['debtor'] == old_name:
+                s['debtor'] = new_name
+            if s['creditor'] == old_name:
+                s['creditor'] = new_name
+    _save()
+
+
+# ── Email & Invites ────────────────────────────────────────────────────────────
+
+def make_invite_token(email, trip_id):
+    payload = {'email': email.lower(), 'trip_id': trip_id}
+    return _serializer.dumps(payload, salt='invite')
+
+
+def verify_invite_token(token, max_age=604800):  # 7 days
+    try:
+        payload = _serializer.loads(token, salt='invite', max_age=max_age)
+        if isinstance(payload, dict):
+            return payload  # {'email': ..., 'trip_id': ...}
+        # Legacy tokens were just the email string
+        return {'email': payload, 'trip_id': None}
+    except (BadSignature, SignatureExpired):
+        return None
+
+
+def _send_email(to_email, subject, html, text=None):
+    server    = os.environ.get('MAIL_SERVER', '')
+    port      = int(os.environ.get('MAIL_PORT', 587))
+    username  = os.environ.get('MAIL_USERNAME', '')
+    password  = os.environ.get('MAIL_PASSWORD', '')
+    from_addr = os.environ.get('MAIL_FROM', username)
+
+    if not server or not username:
+        print(f'[PayBack] Email not configured — would send to {to_email}: {subject}')
+        return False
+
+    msg = MIMEMultipart('alternative')
+    msg['Subject'] = subject
+    msg['From']    = from_addr
+    msg['To']      = to_email
+    if text:
+        msg.attach(MIMEText(text, 'plain'))
+    msg.attach(MIMEText(html, 'html'))
+
+    def _do_send():
+        try:
+            if port == 465:
+                with smtplib.SMTP_SSL(server, port, timeout=15) as smtp:
+                    smtp.login(username, password)
+                    smtp.sendmail(from_addr, to_email, msg.as_string())
+            else:
+                with smtplib.SMTP(server, port, timeout=15) as smtp:
+                    smtp.ehlo()
+                    smtp.starttls()
+                    smtp.ehlo()
+                    smtp.login(username, password)
+                    smtp.sendmail(from_addr, to_email, msg.as_string())
+            print(f'[PayBack] Email sent to {to_email}')
+            return True
+        except Exception as e:
+            print(f'[PayBack] Email failed: {e}')
+            return False
+
+    return _do_send  # caller decides sync vs async
+
+
+def _send_email_async(to_email, subject, html, text=None):
+    """Fire-and-forget — returns immediately (used for invites)."""
+    fn = _send_email(to_email, subject, html, text)
+    if fn:
+        threading.Thread(target=fn, daemon=True).start()
+    return True
+
+
+def _send_email_sync(to_email, subject, html, text=None):
+    """Blocking send — returns True/False (used for reminders)."""
+    fn = _send_email(to_email, subject, html, text)
+    return fn() if fn else False
+
+
+def send_invite(to_email, invited_by_name, trip_id):
+    t = get_trip(trip_id)
+    if not t:
+        return False
+    app_url = os.environ.get('APP_URL', 'http://localhost:8000')
+    token   = make_invite_token(to_email, trip_id)
+    link    = f'{app_url}/register?invite={token}&email={to_email}'
+    subject = f"{invited_by_name} invited you to join {t['name']} on PayBack"
+    html = f"""
+    <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px;
+                background:#0f1220;color:#dde2f0;border-radius:12px">
+      <h2 style="color:#818cf8">You're invited! ✈️</h2>
+      <p><strong>{invited_by_name}</strong> has invited you to join
+         <strong>{t['name']}</strong> on PayBack — a group trip expense tracker.</p>
+      <a href="{link}" style="display:inline-block;margin:20px 0;padding:12px 24px;
+         background:#6366f1;color:#fff;text-decoration:none;border-radius:8px;font-weight:600">
+        Join the Trip →
+      </a>
+      <p style="font-size:12px;color:#6b759a">
+        This invite expires in 7 days. If you didn't expect this, you can ignore it.
+      </p>
+    </div>"""
+    text = f"{invited_by_name} invited you to {t['name']}.\n\nJoin here: {link}"
+    return _send_email_async(to_email, subject, html, text)
+
+
+# ── Expenses ───────────────────────────────────────────────────────────────────
+
+def get_expenses(trip_id, sort=None, search=None, cat_filter=None, page=1):
+    result = [e for e in expenses if e.get('trip_id') == trip_id]
+
+    if search:
+        q = search.lower()
+        result = [e for e in result if q in e['description'].lower()
+                  or q in e.get('notes', '').lower()
+                  or q in e['paid_by'].lower()]
+
+    if cat_filter and cat_filter != 'all':
+        result = [e for e in result if e['category'] == cat_filter]
+
+    if sort == 'oldest':
+        result.sort(key=lambda e: e['date'])
+    elif sort == 'highest':
+        result.sort(key=lambda e: e['amount'], reverse=True)
+    elif sort == 'lowest':
+        result.sort(key=lambda e: e['amount'])
+    else:
+        result.sort(key=lambda e: e['date'], reverse=True)
+
+    total_count  = len(result)
+    total_amount = round(sum(e['amount'] for e in result), 2)
+    pages = max(1, (total_count + PAGE_SIZE - 1) // PAGE_SIZE)
+    page  = max(1, min(page, pages))
+    start = (page - 1) * PAGE_SIZE
+    # Key is 'expense_list' (not 'items') to avoid shadowing dict.items()
+    expense_list = result[start:start + PAGE_SIZE]
+
+    today_str      = datetime.today().strftime('%Y-%m-%d')
+    today_expenses = [e for e in expenses
+                      if e.get('trip_id') == trip_id and e['date'] == today_str]
+
+    return {
+        'expense_list': expense_list,
+        'total_count':  total_count,
+        'total_amount': total_amount,
+        'page':         page,
+        'pages':        pages,
+        'page_size':    PAGE_SIZE,
+        'today_count':  len(today_expenses),
+        'today_total':  round(sum(e['amount'] for e in today_expenses), 2),
+    }
+
+
+def add_expense(trip_id, description, amount, date, paid_by, category, split, notes=''):
+    global _next_id
+    t = get_trip(trip_id)
+    members = t['members'] if t else []
+    expenses.append({
+        'id':          _next_id,
+        'trip_id':     trip_id,
+        'description': description.strip(),
+        'amount':      round(float(str(amount).replace(',', '')), 2),
+        'date':        date,
+        'paid_by':     paid_by,
+        'category':    category,
+        'split':       split if split else list(members),
+        'notes':       notes.strip(),
+    })
+    _next_id += 1
+    _save()
+
+
+def get_expense(expense_id):
+    return next((e for e in expenses if e['id'] == expense_id), None)
+
+
+def update_expense(expense_id, **fields):
+    for e in expenses:
+        if e['id'] == expense_id:
+            if 'amount' in fields:
+                fields['amount'] = round(float(str(fields['amount']).replace(',', '')), 2)
+            e.update(fields)
+            _save()
+            return True
+    return False
+
+
+def delete_expense(expense_id):
+    global expenses
+    before   = len(expenses)
+    expenses = [e for e in expenses if e['id'] != expense_id]
+    _save()
+    return len(expenses) < before
+
+
+def export_csv(trip_id):
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['ID', 'Description', 'Amount', 'Date', 'Paid By', 'Category', 'Split', 'Notes'])
+    trip_expenses = sorted(
+        (e for e in expenses if e.get('trip_id') == trip_id),
+        key=lambda x: x['date']
+    )
+    for e in trip_expenses:
+        writer.writerow([
+            e['id'], e['description'], f"{e['amount']:.2f}", e['date'],
+            e['paid_by'], e['category'], ','.join(e['split']), e.get('notes', '')
+        ])
+    return output.getvalue()
+
+
+# ── Balances ───────────────────────────────────────────────────────────────────
+
+def get_balances(trip_id, member=None):
+    t = get_trip(trip_id)
+    members = t['members'] if t else []
+    if not members:
+        return {
+            'members': {}, 'debts': [], 'total': 0,
+            'per_person': 0, 'category_totals': {}, 'transactions': []
+        }
+
+    trip_expenses = [e for e in expenses if e.get('trip_id') == trip_id]
+
+    paid       = {m: 0.0 for m in members}
+    share_owed = {m: 0.0 for m in members}
+    count      = {m: 0   for m in members}
+    cat_totals = {}
+    transactions = []
+
+    for e in trip_expenses:
+        amt        = e['amount']
+        payer      = e['paid_by']
+        split_list = [m for m in e['split'] if m in members]
+        if not split_list:
+            split_list = list(members)
+        per_share = amt / len(split_list)
+
+        if payer in paid:
+            paid[payer]  += amt
+            count[payer] += 1
+
+        for m in split_list:
+            share_owed[m] += per_share
+
+        cat = e['category']
+        cat_totals[cat] = cat_totals.get(cat, 0) + amt
+
+        txn_splits = {}
+        for m in members:
+            in_split = m in split_list
+            is_payer = m == payer
+            if is_payer and in_split:
+                txn_splits[m] = amt - per_share
+            elif is_payer:
+                txn_splits[m] = amt
+            elif in_split:
+                txn_splits[m] = -per_share
+            else:
+                txn_splits[m] = 0.0
+
+        transactions.append({
+            'date':        e['date'],
+            'description': e['description'],
+            'paid_by':     payer,
+            'amount':      amt,
+            'splits':      txn_splits,
+        })
+
+    transactions.sort(key=lambda t: t['date'], reverse=True)
+
+    if member and member != 'all' and member in members:
+        transactions = [
+            t for t in transactions
+            if t['paid_by'] == member or t['splits'].get(member, 0) != 0
+        ]
+
+    total      = round(sum(paid.values()), 2)
+    n          = len(members)
+    per_person = round(total / n, 2) if n else 0
+    net        = {m: round(paid[m] - share_owed[m], 2) for m in members}
+
+    member_stats = {
+        m: {
+            'paid':  round(paid[m], 2),
+            'share': round(share_owed[m], 2),
+            'net':   net[m],
+            'count': count[m],
+            'pct':   round(paid[m] / total * 100, 1) if total else 0,
+        }
+        for m in members
+    }
+
+    creds     = [(m, net[m])  for m in members if net[m] >  0.005]
+    debts_raw = [(m, -net[m]) for m in members if net[m] < -0.005]
+    creds.sort(key=lambda x: x[1], reverse=True)
+    debts_raw.sort(key=lambda x: x[1], reverse=True)
+
+    debts = []
+    ci, di = 0, 0
+    while ci < len(creds) and di < len(debts_raw):
+        creditor, c_amt = creds[ci]
+        debtor,   d_amt = debts_raw[di]
+        settle = min(c_amt, d_amt)
+        debts.append({'debtor': debtor, 'creditor': creditor, 'amount': round(settle, 2)})
+        creds[ci]     = (creditor, c_amt - settle)
+        debts_raw[di] = (debtor,   d_amt - settle)
+        if creds[ci][1]     < 0.005: ci += 1
+        if debts_raw[di][1] < 0.005: di += 1
+
+    cat_breakdown = {}
+    if total > 0:
+        for cat, amt in sorted(cat_totals.items(), key=lambda x: x[1], reverse=True):
+            cat_breakdown[cat] = {
+                'amount': round(amt, 2),
+                'pct':    round(amt / total * 100),
+            }
+
+    return {
+        'members':         member_stats,
+        'debts':           debts,
+        'total':           total,
+        'per_person':      per_person,
+        'category_totals': cat_breakdown,
+        'transactions':    transactions,
+    }
+
+
+# ── Settle Up ──────────────────────────────────────────────────────────────────
+
+def get_settlements(trip_id):
+    return [s for s in settlements if s.get('trip_id') == trip_id]
+
+
+def settle_debt(trip_id, debtor, creditor):
+    balance_data = get_balances(trip_id)
+    amount = next(
+        (d['amount'] for d in balance_data['debts']
+         if d['debtor'] == debtor and d['creditor'] == creditor),
+        0.0
+    )
+    today = datetime.today().strftime('%Y-%m-%d')
+    for s in settlements:
+        if (s.get('trip_id') == trip_id
+                and s['debtor'] == debtor and s['creditor'] == creditor):
+            s.update({'status': 'settled', 'settled_on': today, 'amount': amount})
+            _save()
+            return
+    settlements.append({
+        'trip_id':    trip_id,
+        'debtor':     debtor,
+        'creditor':   creditor,
+        'amount':     amount,
+        'status':     'settled',
+        'settled_on': today,
+    })
+    _save()
+
+
+def mark_all_settled(trip_id):
+    balance_data     = get_balances(trip_id)
+    trip_settlements = get_settlements(trip_id)
+    settled_pairs    = {(s['debtor'], s['creditor'])
+                        for s in trip_settlements if s['status'] == 'settled'}
+    today = datetime.today().strftime('%Y-%m-%d')
+    for debt in balance_data['debts']:
+        if (debt['debtor'], debt['creditor']) not in settled_pairs:
+            settlements.append({
+                'trip_id':    trip_id,
+                'debtor':     debt['debtor'],
+                'creditor':   debt['creditor'],
+                'amount':     debt['amount'],
+                'status':     'settled',
+                'settled_on': today,
+            })
+    _save()
+
+
+def send_reminder(trip_id, debtor):
+    balance_data = get_balances(trip_id)
+    debt_info = next(
+        (d for d in balance_data['debts'] if d['debtor'] == debtor), None
+    )
+    if not debt_info:
+        return
+
+    amount   = debt_info['amount']
+    creditor = debt_info['creditor']
+    t        = get_trip(trip_id)
+    user     = get_user_by_email(debtor) or next(
+        (u for u in users if u['name'].lower() == debtor.lower()), None
+    )
+
+    if user and t:
+        app_url = os.environ.get('APP_URL', 'http://localhost:8000')
+        html = f"""
+        <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px;
+                    background:#0f1220;color:#dde2f0;border-radius:12px">
+          <h2 style="color:#f59e0b">Payment Reminder 💸</h2>
+          <p>Hey <strong>{user['name']}</strong>, you owe
+             <strong>${amount:.2f}</strong> to <strong>{creditor}</strong>
+             for <strong>{t['name']}</strong>.</p>
+          <a href="{app_url}" style="display:inline-block;margin:16px 0;padding:12px 24px;
+             background:#6366f1;color:#fff;text-decoration:none;border-radius:8px;font-weight:600">
+            Open PayBack →
+          </a>
+        </div>"""
+        return _send_email_sync(
+            user['email'],
+            f"Reminder: You owe ${amount:.2f} for {t['name']}",
+            html
+        )
+    else:
+        print(f'[PayBack] Reminder: {debtor} owes {creditor} ${amount:.2f} — no registered account found')
+        return False

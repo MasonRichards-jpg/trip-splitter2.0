@@ -1,0 +1,185 @@
+{
+  "trips": [
+    {
+      "id": 1,
+      "name": "Japan winter 2026",
+      "owner_id": 1,
+      "member_user_ids": [
+        1
+      ],
+      "destination": "Japan",
+      "start_date": "2026-03-23",
+      "end_date": "2026-03-23",
+      "currency": "USD",
+      "cover": "\ud83d\uddfb",
+      "description": "",
+      "budget": 10000.0,
+      "split_method": "equal",
+      "members": [
+        "Mason Richards",
+        "ya mom",
+        "t2",
+        "t4",
+        "t5",
+        "masrich18@gmail.com"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "My Trip",
+      "owner_id": 2,
+      "member_user_ids": [
+        2
+      ],
+      "destination": "",
+      "start_date": "2026-03-23",
+      "end_date": "2026-03-23",
+      "currency": "USD",
+      "cover": "\u2708\ufe0f",
+      "description": "",
+      "budget": 0.0,
+      "split_method": "equal",
+      "members": [
+        "mason 2.0"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "test",
+      "owner_id": 1,
+      "member_user_ids": [
+        1
+      ],
+      "destination": "",
+      "start_date": "2026-03-23",
+      "end_date": "2026-03-23",
+      "currency": "USD",
+      "cover": "\u2708\ufe0f",
+      "description": "",
+      "budget": 0.0,
+      "split_method": "equal",
+      "members": [
+        "Mason Richards"
+      ]
+    }
+  ],
+  "expenses": [
+    {
+      "id": 3,
+      "trip_id": 1,
+      "description": "sss",
+      "amount": 5.0,
+      "date": "2026-03-23",
+      "paid_by": "Mason Richards",
+      "category": "food",
+      "split": [
+        "Mason Richards",
+        "ya mom"
+      ],
+      "notes": ""
+    },
+    {
+      "id": 4,
+      "trip_id": 1,
+      "description": "hotel",
+      "amount": 500.0,
+      "date": "2026-03-23",
+      "paid_by": "Mason Richards",
+      "category": "stay",
+      "split": [
+        "Mason Richards",
+        "ya mom",
+        "t2",
+        "t4",
+        "t5"
+      ],
+      "notes": ""
+    },
+    {
+      "id": 5,
+      "trip_id": 1,
+      "description": "sss",
+      "amount": 10000.0,
+      "date": "2026-03-23",
+      "paid_by": "Mason Richards",
+      "category": "food",
+      "split": [
+        "Mason Richards",
+        "ya mom"
+      ],
+      "notes": ""
+    },
+    {
+      "id": 6,
+      "trip_id": 1,
+      "description": "sss",
+      "amount": 3.0,
+      "date": "2026-03-23",
+      "paid_by": "Mason Richards",
+      "category": "food",
+      "split": [
+        "Mason Richards",
+        "ya mom",
+        "t2",
+        "t4",
+        "t5",
+        "masrich18@gmail.com"
+      ],
+      "notes": ""
+    }
+  ],
+  "settlements": [
+    {
+      "trip_id": 1,
+      "debtor": "ya mom",
+      "creditor": "Mason Richards",
+      "amount": 2.5,
+      "status": "settled",
+      "settled_on": "2026-03-23"
+    },
+    {
+      "trip_id": 1,
+      "debtor": "t2",
+      "creditor": "Mason Richards",
+      "amount": 100.0,
+      "status": "settled",
+      "settled_on": "2026-03-23"
+    },
+    {
+      "trip_id": 1,
+      "debtor": "t4",
+      "creditor": "Mason Richards",
+      "amount": 100.0,
+      "status": "settled",
+      "settled_on": "2026-03-23"
+    },
+    {
+      "trip_id": 1,
+      "debtor": "t5",
+      "creditor": "Mason Richards",
+      "amount": 100.0,
+      "status": "settled",
+      "settled_on": "2026-03-23"
+    },
+    {
+      "trip_id": 1,
+      "debtor": "masrich18@gmail.com",
+      "creditor": "Mason Richards",
+      "amount": 0.5,
+      "status": "settled",
+      "settled_on": "2026-03-23"
+    }
+  ],
+  "users": [
+    {
+      "id": 1,
+      "name": "Mason Richards",
+      "email": "maserich24@gmail.com",
+      "password_hash": "scrypt:32768:8:1$4Z57pCWCKMnwRy9w$beafa7d1f7117120bde72a8ae6a1eaa613d5a2baf25db608b32e356f256e20704f2490e7837597b0aa5e941ea034ca6c7f9bf336ec0daa8d7b72b89ac0f24d5d",
+      "created_at": "2026-03-23"
+    }
+  ],
+  "next_id": 7,
+  "next_user_id": 3,
+  "next_trip_id": 4
+}

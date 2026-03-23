@@ -103,15 +103,10 @@
   })));
 
   // ── Lighting ─────────────────────────────────────────
-  scene.add(new THREE.AmbientLight(0x334466, 1.4));
+  scene.add(new THREE.AmbientLight(0x5566aa, 2.2));
 
-  // Sun-like directional light (warm, from upper-right)
-  const sunLight = new THREE.DirectionalLight(0xfff5e0, 1.8);
-  sunLight.position.set(5, 3, 4);
-  scene.add(sunLight);
-
-  // Cool fill light to simulate sky scatter
-  const fillLight = new THREE.DirectionalLight(0x6699ff, 0.5);
+  // Soft front fill — no harsh hotspot
+  const fillLight = new THREE.DirectionalLight(0x8899cc, 0.55);
   fillLight.position.set(-4, -1, -3);
   scene.add(fillLight);
 

@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PayBack — Create Account</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <style>
+    html, body { overflow: auto; }
+    .auth-wrap {
+      min-height: 100vh; display: flex; align-items: center;
+      justify-content: center; padding: 24px;
+    }
+    .auth-card {
+      width: 100%; max-width: 420px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 16px; padding: 44px 40px;
+      box-shadow: 0 0 60px rgba(99,102,241,.08);
+      position: relative; z-index: 1;
+    }
+    .auth-brand {
+      display: flex; align-items: center; gap: 12px;
+      justify-content: center; margin-bottom: 36px;
+    }
+    .auth-heading { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+    .auth-sub { font-size: 13px; color: var(--muted); margin-bottom: 28px; }
+    .auth-footer { margin-top: 22px; font-size: 13px; color: var(--muted); text-align: center; }
+    .auth-footer a { color: var(--accent-lt); text-decoration: none; }
+    .auth-footer a:hover { text-decoration: underline; }
+    .error-box {
+      padding: 11px 14px;
+      background: rgba(244,63,94,.1); border: 1px solid rgba(244,63,94,.25);
+      border-radius: var(--radius-sm); font-size: 13px; color: #f87171;
+      margin-bottom: 20px;
+    }
+    .invite-banner {
+      padding: 11px 14px;
+      background: rgba(99,102,241,.1); border: 1px solid rgba(99,102,241,.25);
+      border-radius: var(--radius-sm); font-size: 13px; color: var(--accent-lt);
+      margin-bottom: 20px;
+    }
+    .form-group { margin-bottom: 14px; }
+  </style>
+</head>
+<body>
+<canvas id="globe-canvas" style="position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;opacity:0.3;pointer-events:none"></canvas>
+
+<div class="auth-wrap">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <div class="brand-icon">P$</div>
+      <span class="brand-name" style="font-size:22px">PayBack</span>
+    </div>
+
+    <div class="auth-heading">Create your account</div>
+    <div class="auth-sub">Start splitting trip expenses with your group</div>
+
+    {% if invite_token %}
+    <div class="invite-banner">✈️ You've been invited to join a trip — create an account to get started!</div>
+    {% endif %}
+
+    {% if error %}
+    <div class="error-box">
+      {{ error }}
+      {% if invite_token and 'already has an account' in error %}
+      <br><a href="/login?invite={{ invite_token }}" style="color:#f87171;font-weight:600">Sign in to join the trip →</a>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <form method="POST" action="/register">
+      {% if invite_token %}
+      <input type="hidden" name="invite_token" value="{{ invite_token }}" />
+      {% endif %}
+
+      <div class="form-group">
+        <label class="form-label">Your name</label>
+        <input class="form-input" type="text" name="name" placeholder="Alex Johnson" required autofocus />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email address</label>
+        <input class="form-input" type="email" name="email" value="{{ prefill_email }}" placeholder="you@example.com" required />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Password</label>
+        <input class="form-input" type="password" name="password" placeholder="At least 6 characters" required />
+      </div>
+      <div class="form-group" style="margin-bottom:20px">
+        <label class="form-label">Confirm password</label>
+        <input class="form-input" type="password" name="confirm" placeholder="••••••••" required />
+      </div>
+
+      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;padding:11px 0;font-size:14px">
+        Create Account →
+      </button>
+    </form>
+
+    <div class="auth-footer">
+      Already have an account? <a href="/login">Sign in →</a>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+<script src="/static/globe.js"></script>
+</body>
+</html>

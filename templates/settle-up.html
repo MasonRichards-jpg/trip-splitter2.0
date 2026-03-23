@@ -17,23 +17,21 @@
   </div>
   <nav class="sidebar-nav">
     <span class="nav-label">Menu</span>
-    <a href="/" class="nav-item">
-      <span class="ni">⊞</span> <span>Overview</span>
-    </a>
-    <a href="/expenses" class="nav-item">
-      <span class="ni">◈</span> <span>Expenses</span>
-    </a>
-    <a href="/balances" class="nav-item">
-      <span class="ni">⚖</span> <span>Balances</span>
-    </a>
-    <a href="/settle-up" class="nav-item active">
-      <span class="ni">✓</span> <span>Settle Up</span>
-    </a>
-    <a href="/trip" class="nav-item">
-      <span class="ni">✦</span> <span>Trip</span>
-    </a>
+    <a href="/"          class="nav-item"><span class="ni">⊞</span> <span>Overview</span></a>
+    <a href="/expenses"  class="nav-item"><span class="ni">◈</span> <span>Expenses</span></a>
+    <a href="/balances"  class="nav-item"><span class="ni">⚖</span> <span>Balances</span></a>
+    <a href="/settle-up" class="nav-item active"><span class="ni">✓</span> <span>Settle Up</span></a>
+    <a href="/trips"     class="nav-item"><span class="ni">⊹</span> <span>My Trips</span></a>
+    <a href="/trip"      class="nav-item"><span class="ni">✦</span> <span>Trip</span></a>
   </nav>
   <div class="sidebar-bottom">
+    {% if current_user %}
+    <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--surface2);border-radius:var(--radius-sm);margin-bottom:12px">
+      <span class="av sm" style="--color:#6366f1">{{ current_user.name[0].upper() }}</span>
+      <span style="flex:1;font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)">{{ current_user.name }}</span>
+      <a href="/logout" style="font-size:11px;color:var(--muted);white-space:nowrap;padding:3px 7px;background:var(--surface);border:1px solid var(--border);border-radius:4px">Sign out</a>
+    </div>
+    {% endif %}
     <div class="trip-card">
       <div class="trip-card-top">
         <span class="trip-card-label">Active Trip</span>
@@ -42,8 +40,8 @@
       <div class="trip-card-name">{{ trip.cover }} {{ trip.name }}</div>
       <div class="trip-card-dates">{{ trip.start_date | fmtdate }} — {{ trip.end_date | fmtdate }}</div>
       <div class="trip-avatars">
-        {% for member in trip.members %}
-        <span class="av sm" style="--color:{{ loop.cycle('#6366f1', '#ec4899', '#14b8a6', '#f59e0b', '#22c55e', '#64748b', '#8b5cf6', '#f97316') }}">{{ member[0] }}</span>
+        {% for m in trip.members %}
+        <span class="av sm" style="--color:{{ member_color(m) }}">{{ m[0] }}</span>
         {% endfor %}
       </div>
     </div>
@@ -55,204 +53,131 @@
   <header class="topbar">
     <div class="topbar-left">
       <h1 class="page-title">Settle Up</h1>
-      <p class="page-sub">3 payments needed · $342.00 total unsettled</p>
+      <p class="page-sub">
+        {{ pending_debts | length }} payment{{ 's' if pending_debts | length != 1 else '' }} needed
+        · {{ unsettled_total | currency }} total unsettled
+      </p>
     </div>
     <div class="topbar-right">
-      <a href="/settle-up/history" class="btn btn-ghost btn-sm">Payment History</a>
+      {% if pending_debts %}
       <form method="POST" action="/settle-up/mark-all" style="display:inline">
-        <button type="submit" class="btn btn-success btn-sm">Mark All Settled</button>
+        <button type="submit" class="btn btn-success btn-sm">✓ Mark All Settled</button>
       </form>
+      {% endif %}
     </div>
   </header>
 
   <div class="page-body">
 
+    <!-- FLASH MESSAGES -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    {% for category, message in messages %}
+    <div style="padding:12px 16px;margin-bottom:12px;border-radius:var(--radius-sm);font-size:13px;font-weight:500;
+                {% if category == 'success' %}background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.3);color:#4ade80;
+                {% else %}background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.3);color:#fbbf24;{% endif %}">
+      {{ message }}
+    </div>
+    {% endfor %}
+    {% endif %}
+    {% endwith %}
+
     <!-- SUMMARY STATS -->
     <div class="stats-row" style="grid-template-columns:repeat(3,1fr)">
       <div class="stat-card">
         <div class="stat-card-label">Unsettled Debts</div>
-        <div class="stat-card-value col-warning">3</div>
-        <div class="stat-card-sub col-muted">payments needed</div>
+        <div class="stat-card-value col-warning">{{ pending_debts | length }}</div>
+        <div class="stat-card-sub col-muted">payment{{ 's' if pending_debts | length != 1 else '' }} needed</div>
       </div>
       <div class="stat-card">
         <div class="stat-card-label">Total to Settle</div>
-        <div class="stat-card-value col-danger">$342.00</div>
-        <div class="stat-card-sub col-muted">across 3 debts</div>
+        <div class="stat-card-value col-danger">{{ unsettled_total | currency }}</div>
+        <div class="stat-card-sub col-muted">across {{ pending_debts | length }} debt{{ 's' if pending_debts | length != 1 else '' }}</div>
       </div>
       <div class="stat-card">
         <div class="stat-card-label">Already Settled</div>
-        <div class="stat-card-value col-success">$520.00</div>
-        <div class="stat-card-sub col-muted">2 payments done</div>
+        <div class="stat-card-value col-success">{{ settled_total | currency }}</div>
+        <div class="stat-card-sub col-muted">{{ settled_debts | length }} payment{{ 's' if settled_debts | length != 1 else '' }} done</div>
       </div>
     </div>
 
     <!-- PENDING DEBTS -->
+    {% if pending_debts %}
     <div>
       <div class="section-heading">Pending Payments</div>
       <div style="height:12px"></div>
       <div class="settle-grid">
-
-        <!-- Debt 1 -->
+        {% for debt in pending_debts %}
         <div class="debt-card">
           <div class="debt-top">
             <div class="debt-from">
-              <span class="av lg" style="--color:#ec4899">S</span>
-              <span class="debt-name">Sara</span>
+              <span class="av lg" style="--color:{{ member_color(debt.debtor) }}">{{ debt.debtor[0] }}</span>
+              <span class="debt-name">{{ debt.debtor }}</span>
             </div>
             <div class="debt-arrow">
               <div class="debt-arrow-line"></div>
               <span class="debt-arrow-icon">→</span>
             </div>
             <div class="debt-to">
-              <span class="av lg" style="--color:#6366f1">A</span>
-              <span class="debt-name">Alex</span>
+              <span class="av lg" style="--color:{{ member_color(debt.creditor) }}">{{ debt.creditor[0] }}</span>
+              <span class="debt-name">{{ debt.creditor }}</span>
             </div>
           </div>
-          <div class="debt-amount">$74.00</div>
-          <div class="debt-desc">Sara owes Alex for covered expenses</div>
-          <div style="font-size:11px;color:var(--muted);text-align:center;padding:6px 12px;background:var(--surface2);border-radius:var(--radius-sm)">
-            Dinner at Sarong (+2 more)
-          </div>
+          <div class="debt-amount">{{ debt.amount | currency }}</div>
+          <div class="debt-desc">{{ debt.debtor }} owes {{ debt.creditor }} for covered expenses</div>
           <div class="debt-actions">
             <form method="POST" action="/settle-up/remind" style="display:inline">
-              <input type="hidden" name="debtor" value="Sara">
-              <button type="submit" class="btn btn-ghost btn-sm">Remind Sara</button>
+              <input type="hidden" name="debtor" value="{{ debt.debtor }}">
+              <button type="submit" class="btn btn-ghost btn-sm">Remind {{ debt.debtor }}</button>
             </form>
             <form method="POST" action="/settle-up/settle" style="display:inline">
-              <input type="hidden" name="debtor" value="Sara">
-              <input type="hidden" name="creditor" value="Alex">
+              <input type="hidden" name="debtor"   value="{{ debt.debtor }}">
+              <input type="hidden" name="creditor" value="{{ debt.creditor }}">
               <button type="submit" class="btn btn-success btn-sm">✓ Mark Settled</button>
             </form>
           </div>
         </div>
-
-        <!-- Debt 2 -->
-        <div class="debt-card">
-          <div class="debt-top">
-            <div class="debt-from">
-              <span class="av lg" style="--color:#f59e0b">J</span>
-              <span class="debt-name">Jess</span>
-            </div>
-            <div class="debt-arrow">
-              <div class="debt-arrow-line"></div>
-              <span class="debt-arrow-icon">→</span>
-            </div>
-            <div class="debt-to">
-              <span class="av lg" style="--color:#14b8a6">M</span>
-              <span class="debt-name">Mike</span>
-            </div>
-          </div>
-          <div class="debt-amount">$140.00</div>
-          <div class="debt-desc">Jess owes Mike for covered expenses</div>
-          <div style="font-size:11px;color:var(--muted);text-align:center;padding:6px 12px;background:var(--surface2);border-radius:var(--radius-sm)">
-            Villa Ubud — Night 3 (+1 more)
-          </div>
-          <div class="debt-actions">
-            <form method="POST" action="/settle-up/remind" style="display:inline">
-              <input type="hidden" name="debtor" value="Jess">
-              <button type="submit" class="btn btn-ghost btn-sm">Remind Jess</button>
-            </form>
-            <form method="POST" action="/settle-up/settle" style="display:inline">
-              <input type="hidden" name="debtor" value="Jess">
-              <input type="hidden" name="creditor" value="Mike">
-              <button type="submit" class="btn btn-success btn-sm">✓ Mark Settled</button>
-            </form>
-          </div>
-        </div>
-
-        <!-- Debt 3 -->
-        <div class="debt-card">
-          <div class="debt-top">
-            <div class="debt-from">
-              <span class="av lg" style="--color:#22c55e">L</span>
-              <span class="debt-name">Leo</span>
-            </div>
-            <div class="debt-arrow">
-              <div class="debt-arrow-line"></div>
-              <span class="debt-arrow-icon">→</span>
-            </div>
-            <div class="debt-to">
-              <span class="av lg" style="--color:#ec4899">S</span>
-              <span class="debt-name">Sara</span>
-            </div>
-          </div>
-          <div class="debt-amount">$128.00</div>
-          <div class="debt-desc">Leo owes Sara for covered expenses</div>
-          <div style="font-size:11px;color:var(--muted);text-align:center;padding:6px 12px;background:var(--surface2);border-radius:var(--radius-sm)">
-            Scooter Rental × 5 (+2 more)
-          </div>
-          <div class="debt-actions">
-            <form method="POST" action="/settle-up/remind" style="display:inline">
-              <input type="hidden" name="debtor" value="Leo">
-              <button type="submit" class="btn btn-ghost btn-sm">Remind Leo</button>
-            </form>
-            <form method="POST" action="/settle-up/settle" style="display:inline">
-              <input type="hidden" name="debtor" value="Leo">
-              <input type="hidden" name="creditor" value="Sara">
-              <button type="submit" class="btn btn-success btn-sm">✓ Mark Settled</button>
-            </form>
-          </div>
-        </div>
-
+        {% endfor %}
       </div>
     </div>
+    {% else %}
+    <div class="card">
+      <div class="card-body" style="text-align:center;padding:48px;color:var(--muted)">
+        🎉 All settled up! No pending payments.
+      </div>
+    </div>
+    {% endif %}
 
     <!-- SETTLED DEBTS -->
+    {% if settled_debts %}
     <div>
       <div class="section-heading" style="color:var(--muted)">Settled Payments</div>
       <div style="height:12px"></div>
       <div class="settle-grid settled-section">
-
-        <!-- Settled 1 -->
-        <div class="debt-card" style="position:relative">
+        {% for s in settled_debts %}
+        <div class="debt-card" style="position:relative;opacity:0.75">
           <span class="settled-badge">✓ Settled</span>
           <div class="debt-top">
             <div class="debt-from">
-              <span class="av lg" style="--color:#14b8a6">M</span>
-              <span class="debt-name">Mike</span>
+              <span class="av lg" style="--color:{{ member_color(s.debtor) }}">{{ s.debtor[0] }}</span>
+              <span class="debt-name">{{ s.debtor }}</span>
             </div>
             <div class="debt-arrow">
               <div class="debt-arrow-line" style="background:var(--border)"></div>
               <span class="debt-arrow-icon" style="color:var(--muted)">→</span>
             </div>
             <div class="debt-to">
-              <span class="av lg" style="--color:#6366f1">A</span>
-              <span class="debt-name">Alex</span>
+              <span class="av lg" style="--color:{{ member_color(s.creditor) }}">{{ s.creditor[0] }}</span>
+              <span class="debt-name">{{ s.creditor }}</span>
             </div>
           </div>
-          <div class="debt-amount" style="color:var(--muted)">$280.00</div>
-          <div class="debt-desc">Settled on Jun 16 via bank transfer</div>
-          <div style="font-size:11px;color:var(--muted);text-align:center;padding:6px 12px;background:var(--surface2);border-radius:var(--radius-sm)">
-            Villa Ubud + Scooters
-          </div>
+          <div class="debt-amount" style="color:var(--muted)">{{ s.amount | currency }}</div>
+          <div class="debt-desc">Settled on {{ s.settled_on | fmtdate }}</div>
         </div>
-
-        <!-- Settled 2 -->
-        <div class="debt-card" style="position:relative">
-          <span class="settled-badge">✓ Settled</span>
-          <div class="debt-top">
-            <div class="debt-from">
-              <span class="av lg" style="--color:#6366f1">A</span>
-              <span class="debt-name">Alex</span>
-            </div>
-            <div class="debt-arrow">
-              <div class="debt-arrow-line" style="background:var(--border)"></div>
-              <span class="debt-arrow-icon" style="color:var(--muted)">→</span>
-            </div>
-            <div class="debt-to">
-              <span class="av lg" style="--color:#22c55e">L</span>
-              <span class="debt-name">Leo</span>
-            </div>
-          </div>
-          <div class="debt-amount" style="color:var(--muted)">$240.00</div>
-          <div class="debt-desc">Settled on Jun 14 via cash</div>
-          <div style="font-size:11px;color:var(--muted);text-align:center;padding:6px 12px;background:var(--surface2);border-radius:var(--radius-sm)">
-            Airport taxi + breakfasts
-          </div>
-        </div>
-
+        {% endfor %}
       </div>
     </div>
+    {% endif %}
 
   </div>
 </div>

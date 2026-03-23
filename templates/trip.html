@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PayBack — Trip Settings</title>
+  <title>PayBack — Trip</title>
   <link rel="stylesheet" href="/static/style.css" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
 </head>
@@ -17,23 +17,21 @@
   </div>
   <nav class="sidebar-nav">
     <span class="nav-label">Menu</span>
-    <a href="/" class="nav-item">
-      <span class="ni">⊞</span> <span>Overview</span>
-    </a>
-    <a href="/expenses" class="nav-item">
-      <span class="ni">◈</span> <span>Expenses</span>
-    </a>
-    <a href="/balances" class="nav-item">
-      <span class="ni">⚖</span> <span>Balances</span>
-    </a>
-    <a href="/settle-up" class="nav-item">
-      <span class="ni">✓</span> <span>Settle Up</span>
-    </a>
-    <a href="/trip" class="nav-item active">
-      <span class="ni">✦</span> <span>Trip</span>
-    </a>
+    <a href="/"          class="nav-item"><span class="ni">⊞</span> <span>Overview</span></a>
+    <a href="/expenses"  class="nav-item"><span class="ni">◈</span> <span>Expenses</span></a>
+    <a href="/balances"  class="nav-item"><span class="ni">⚖</span> <span>Balances</span></a>
+    <a href="/settle-up" class="nav-item"><span class="ni">✓</span> <span>Settle Up</span></a>
+    <a href="/trips"     class="nav-item"><span class="ni">⊹</span> <span>My Trips</span></a>
+    <a href="/trip"      class="nav-item active"><span class="ni">✦</span> <span>Trip</span></a>
   </nav>
   <div class="sidebar-bottom">
+    {% if current_user %}
+    <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--surface2);border-radius:var(--radius-sm);margin-bottom:12px">
+      <span class="av sm" style="--color:#6366f1">{{ current_user.name[0].upper() }}</span>
+      <span style="flex:1;font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)">{{ current_user.name }}</span>
+      <a href="/logout" style="font-size:11px;color:var(--muted);white-space:nowrap;padding:3px 7px;background:var(--surface);border:1px solid var(--border);border-radius:4px">Sign out</a>
+    </div>
+    {% endif %}
     <div class="trip-card">
       <div class="trip-card-top">
         <span class="trip-card-label">Active Trip</span>
@@ -42,8 +40,8 @@
       <div class="trip-card-name">{{ trip.cover }} {{ trip.name }}</div>
       <div class="trip-card-dates">{{ trip.start_date | fmtdate }} — {{ trip.end_date | fmtdate }}</div>
       <div class="trip-avatars">
-        {% for member in trip.members %}
-        <span class="av sm" style="--color:{{ loop.cycle('#6366f1', '#ec4899', '#14b8a6', '#f59e0b', '#22c55e', '#64748b', '#8b5cf6', '#f97316') }}">{{ member[0] }}</span>
+        {% for m in trip.members %}
+        <span class="av sm" style="--color:{{ member_color(m) }}">{{ m[0] }}</span>
         {% endfor %}
       </div>
     </div>
@@ -54,15 +52,19 @@
 <div class="main">
   <header class="topbar">
     <div class="topbar-left">
-      <h1 class="page-title">Trip Settings</h1>
-      <p class="page-sub">Manage trip details, budget, and members</p>
+      <h1 class="page-title">{% if is_owner %}Trip Settings{% else %}Trip Info{% endif %}</h1>
+      <p class="page-sub">
+        {% if is_owner %}Manage trip details, budget, and members{% else %}{{ trip.name }}{% if trip.destination %} · {{ trip.destination }}{% endif %}{% endif %}
+      </p>
     </div>
+    {% if is_owner %}
     <div class="topbar-right">
       <form method="POST" action="/trip/new" style="display:inline">
         <button type="submit" class="btn btn-ghost btn-sm">+ New Trip</button>
       </form>
       <button type="submit" form="trip-form" class="btn btn-primary btn-sm">Save Changes</button>
     </div>
+    {% endif %}
   </header>
 
   <div class="page-body">
@@ -71,22 +73,23 @@
       <!-- LEFT COLUMN -->
       <div class="trip-left">
 
-        <!-- TRIP DETAILS -->
+        {% if is_owner %}
+        <!-- ── ADMIN: FULL EDIT FORM ── -->
+
+        <!-- TRIP DETAILS FORM -->
         <div class="card">
-          <div class="card-head">
-            <span class="card-title">Trip Details</span>
-          </div>
+          <div class="card-head"><span class="card-title">Trip Details</span></div>
           <div class="card-body" style="display:flex;flex-direction:column;gap:16px">
           <form id="trip-form" method="POST" action="/trip/save">
 
             <div class="form-group">
               <label class="form-label">Trip Name</label>
-              <input class="form-input" type="text" name="trip_name" value="{{ trip.name }}" />
+              <input class="form-input" type="text" name="trip_name" value="{{ trip.name }}" required />
             </div>
 
             <div class="form-group">
               <label class="form-label">Destination</label>
-              <input class="form-input" type="text" name="destination" value="{{ trip.destination }}" />
+              <input class="form-input" type="text" name="destination" value="{{ trip.destination }}" placeholder="e.g. Bali, Indonesia" />
             </div>
 
             <div class="form-row form-row-2">
@@ -103,25 +106,21 @@
             <div class="form-group">
               <label class="form-label">Currency</label>
               <select class="form-select" name="currency">
-                <option value="USD" {% if trip.currency == 'USD' %}selected{% endif %}>USD — US Dollar</option>
-                <option value="EUR" {% if trip.currency == 'EUR' %}selected{% endif %}>EUR — Euro</option>
-                <option value="GBP" {% if trip.currency == 'GBP' %}selected{% endif %}>GBP — British Pound</option>
-                <option value="JPY" {% if trip.currency == 'JPY' %}selected{% endif %}>JPY — Japanese Yen</option>
-                <option value="IDR" {% if trip.currency == 'IDR' %}selected{% endif %}>IDR — Indonesian Rupiah</option>
+                {% for code, label in [('USD','USD — US Dollar'),('EUR','EUR — Euro'),('GBP','GBP — British Pound'),('JPY','JPY — Japanese Yen'),('AUD','AUD — Australian Dollar'),('CAD','CAD — Canadian Dollar'),('IDR','IDR — Indonesian Rupiah'),('THB','THB — Thai Baht'),('MXN','MXN — Mexican Peso')] %}
+                <option value="{{ code }}" {% if trip.currency == code %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
               </select>
             </div>
 
             <div class="form-group">
               <label class="form-label">Trip Cover</label>
               <div class="cover-picker">
-                <label class="cover-option"><input type="radio" name="cover" value="🌴" hidden {% if trip.cover == '🌴' %}checked{% endif %}>🌴</label>
-                <label class="cover-option"><input type="radio" name="cover" value="🏖" hidden {% if trip.cover == '🏖' %}checked{% endif %}>🏖</label>
-                <label class="cover-option"><input type="radio" name="cover" value="🗻" hidden {% if trip.cover == '🗻' %}checked{% endif %}>🗻</label>
-                <label class="cover-option"><input type="radio" name="cover" value="🏙" hidden {% if trip.cover == '🏙' %}checked{% endif %}>🏙</label>
-                <label class="cover-option"><input type="radio" name="cover" value="🚢" hidden {% if trip.cover == '🚢' %}checked{% endif %}>🚢</label>
-                <label class="cover-option"><input type="radio" name="cover" value="✈️" hidden {% if trip.cover == '✈️' %}checked{% endif %}>✈️</label>
-                <label class="cover-option"><input type="radio" name="cover" value="🏕" hidden {% if trip.cover == '🏕' %}checked{% endif %}>🏕</label>
-                <label class="cover-option"><input type="radio" name="cover" value="🎡" hidden {% if trip.cover == '🎡' %}checked{% endif %}>🎡</label>
+                {% for emoji in ['🌴','🏖','🗻','🏙','🚢','✈️','🏕','🎡','🌏','🏝','🎿','🗼'] %}
+                <label class="cover-option">
+                  <input type="radio" name="cover" value="{{ emoji }}" hidden {% if trip.cover == emoji %}checked{% endif %}>
+                  {{ emoji }}
+                </label>
+                {% endfor %}
               </div>
             </div>
 
@@ -133,81 +132,151 @@
           </div>
         </div>
 
-        <!-- MEMBERS MANAGER -->
+        <!-- MEMBERS MANAGER (admin) -->
         </form>
         <div class="card">
           <div class="card-head">
             <span class="card-title">Members</span>
-            <span style="font-size:12px;color:var(--muted)">5 people</span>
+            <span style="font-size:12px;color:var(--muted)">{{ trip.members | length }} {{ 'person' if trip.members | length == 1 else 'people' }}</span>
           </div>
 
           <div class="member-manager">
+            {% if trip.members %}
+            {% for m in trip.members %}
+            <div class="member-row" id="mrow-{{ loop.index }}">
+              <span class="av md" style="--color:{{ member_color(m) }}">{{ m[0] }}</span>
 
-            <div class="member-row">
-              <span class="av md" style="--color:#6366f1">A</span>
-              <div class="member-row-info">
-                <div class="member-row-name">Alex Johnson</div>
-                <div class="member-row-email">alex@email.com</div>
+              <!-- Display mode -->
+              <div class="member-row-info" id="minfo-{{ loop.index }}">
+                <div class="member-row-name">{{ m }}</div>
+                <div style="font-size:11px;color:var(--muted)">
+                  {% if '@' in m %}invited · not yet registered{% else %}member{% endif %}
+                </div>
               </div>
-              <span class="member-role">Organizer</span>
-            </div>
 
-            <div class="member-row">
-              <span class="av md" style="--color:#ec4899">S</span>
-              <div class="member-row-info">
-                <div class="member-row-name">Sara Kim</div>
-                <div class="member-row-email">sara@email.com</div>
-              </div>
-              <form method="POST" action="/trip/remove-member" style="display:inline">
-                <input type="hidden" name="member" value="Sara Kim">
-                <button type="submit" class="btn btn-danger btn-xs">Remove</button>
+              <!-- Inline rename form (hidden by default) -->
+              <form method="POST" action="/trip/rename-member"
+                    id="mrename-{{ loop.index }}"
+                    style="display:none;flex:1;gap:6px;align-items:center">
+                <input type="hidden" name="old_name" value="{{ m }}">
+                <input class="form-input" type="text" name="new_name" value="{{ m }}"
+                       style="flex:1;padding:4px 8px;font-size:13px" required />
+                <button type="submit" class="btn btn-primary btn-xs">Save</button>
+                <button type="button" class="btn btn-ghost btn-xs"
+                        onclick="toggleRename({{ loop.index }}, false)">Cancel</button>
               </form>
-            </div>
 
-            <div class="member-row">
-              <span class="av md" style="--color:#14b8a6">M</span>
-              <div class="member-row-info">
-                <div class="member-row-name">Mike Torres</div>
-                <div class="member-row-email">mike@email.com</div>
+              <div style="display:flex;gap:6px;align-items:center" id="mbtns-{{ loop.index }}">
+                {% if loop.first %}
+                <span class="member-role">Organizer</span>
+                {% endif %}
+                <button type="button" class="btn btn-ghost btn-xs"
+                        onclick="toggleRename({{ loop.index }}, true)">Rename</button>
+                {% if not loop.first %}
+                <form method="POST" action="/trip/remove-member" style="display:inline">
+                  <input type="hidden" name="member" value="{{ m }}">
+                  <button type="submit" class="btn btn-danger btn-xs">Remove</button>
+                </form>
+                {% endif %}
               </div>
-              <form method="POST" action="/trip/remove-member" style="display:inline">
-                <input type="hidden" name="member" value="Mike Torres">
-                <button type="submit" class="btn btn-danger btn-xs">Remove</button>
-              </form>
             </div>
-
-            <div class="member-row">
-              <span class="av md" style="--color:#f59e0b">J</span>
-              <div class="member-row-info">
-                <div class="member-row-name">Jess Park</div>
-                <div class="member-row-email">jess@email.com</div>
-              </div>
-              <form method="POST" action="/trip/remove-member" style="display:inline">
-                <input type="hidden" name="member" value="Jess Park">
-                <button type="submit" class="btn btn-danger btn-xs">Remove</button>
-              </form>
+            {% endfor %}
+            {% else %}
+            <div style="padding:16px;text-align:center;color:var(--muted);font-size:13px">
+              No members yet. Add one below.
             </div>
+            {% endif %}
 
-            <div class="member-row">
-              <span class="av md" style="--color:#22c55e">L</span>
-              <div class="member-row-info">
-                <div class="member-row-name">Leo Martinez</div>
-                <div class="member-row-email">leo@email.com</div>
-              </div>
-              <form method="POST" action="/trip/remove-member" style="display:inline">
-                <input type="hidden" name="member" value="Leo Martinez">
-                <button type="submit" class="btn btn-danger btn-xs">Remove</button>
-              </form>
-            </div>
-
+            <!-- Add member row -->
             <form method="POST" action="/trip/add-member" class="add-member-row">
-              <input class="form-input" type="text" name="member" placeholder="Name or email…" />
+              <input class="form-input" type="text" name="member" placeholder="Name or email address…" />
               <button type="submit" class="btn btn-primary btn-sm">+ Add</button>
             </form>
+
+            <!-- Invite by email (sends email) -->
+            <div style="padding:10px 16px 16px;border-top:1px solid var(--border)">
+              <div style="font-size:11px;color:var(--muted);margin-bottom:8px;font-weight:500;text-transform:uppercase;letter-spacing:.05em">Invite by email</div>
+              <form method="POST" action="/trip/invite" style="display:flex;gap:8px">
+                <input class="form-input" type="email" name="email" placeholder="friend@example.com" style="flex:1" />
+                <button type="submit" class="btn btn-ghost btn-sm">Send Invite ✉</button>
+              </form>
+              <div style="font-size:11px;color:var(--muted);margin-top:6px">They'll get an email with a link to join this trip. Once they register, they'll have full access.</div>
+            </div>
+          </div>
+        </div>
+
+        {% else %}
+        <!-- ── MEMBER: READ-ONLY VIEW ── -->
+
+        <div class="card">
+          <div class="card-head"><span class="card-title">About This Trip</span></div>
+          <div class="card-body" style="display:flex;flex-direction:column;gap:16px">
+
+            <div style="display:flex;align-items:center;gap:12px">
+              <span style="font-size:36px">{{ trip.cover }}</span>
+              <div>
+                <div style="font-size:18px;font-weight:700;color:var(--text)">{{ trip.name }}</div>
+                {% if trip.destination %}
+                <div style="font-size:13px;color:var(--muted)">{{ trip.destination }}</div>
+                {% endif %}
+              </div>
+            </div>
+
+            <div style="display:flex;gap:24px">
+              <div>
+                <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Start</div>
+                <div style="font-size:13px;font-weight:500">{{ trip.start_date | fmtdate }}</div>
+              </div>
+              <div>
+                <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">End</div>
+                <div style="font-size:13px;font-weight:500">{{ trip.end_date | fmtdate }}</div>
+              </div>
+              <div>
+                <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Currency</div>
+                <div style="font-size:13px;font-weight:500">{{ trip.currency }}</div>
+              </div>
+            </div>
+
+            {% if trip.description %}
+            <div style="padding:14px;background:var(--surface2);border-radius:var(--radius-sm);font-size:13px;color:var(--text);line-height:1.6">
+              {{ trip.description }}
+            </div>
+            {% else %}
+            <div style="padding:14px;background:var(--surface2);border-radius:var(--radius-sm);font-size:13px;color:var(--muted);line-height:1.6;font-style:italic">
+              No description added yet.
+            </div>
+            {% endif %}
 
           </div>
         </div>
 
+        <!-- MEMBERS (read-only) -->
+        <div class="card">
+          <div class="card-head">
+            <span class="card-title">Members</span>
+            <span style="font-size:12px;color:var(--muted)">{{ trip.members | length }} {{ 'person' if trip.members | length == 1 else 'people' }}</span>
+          </div>
+          <div class="member-manager">
+            {% for m in trip.members %}
+            <div class="member-row">
+              <span class="av md" style="--color:{{ member_color(m) }}">{{ m[0] }}</span>
+              <div class="member-row-info">
+                <div class="member-row-name">{{ m }}</div>
+                <div class="member-row-email" style="font-size:11px;color:var(--muted)">
+                  {% if '@' in m %}invited{% else %}member{% endif %}
+                </div>
+              </div>
+              {% if loop.first %}<span class="member-role">Organizer</span>{% endif %}
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div style="padding:12px 16px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px;color:var(--muted)">
+          Only the trip organizer can edit settings and manage members.
+        </div>
+
+        {% endif %}
       </div><!-- /trip-left -->
 
       <!-- RIGHT COLUMN -->
@@ -215,11 +284,10 @@
 
         <!-- BUDGET -->
         <div class="card">
-          <div class="card-head">
-            <span class="card-title">Budget</span>
-          </div>
+          <div class="card-head"><span class="card-title">Budget</span></div>
           <div class="card-body" style="display:flex;flex-direction:column;gap:16px">
 
+            {% if is_owner %}
             <div class="form-group">
               <label class="form-label">Total Trip Budget</label>
               <div class="input-prefix">
@@ -227,63 +295,71 @@
                 <input class="form-input" type="text" name="budget" value="{{ trip.budget }}" form="trip-form" />
               </div>
             </div>
+            {% endif %}
+
+            {% set n = trip.members | length %}
+            {% set per_person_budget = (trip.budget / n) | round(2) if n > 0 else 0 %}
+            {% set remaining = trip.budget - balances.total %}
+            {% set budget_pct = [(balances.total / trip.budget * 100) | round | int, 100] | min if trip.budget > 0 else 0 %}
 
             <div class="budget-calc">
               <div class="budget-split-row">
                 <span class="budget-split-label">Total budget</span>
-                <span class="budget-split-val">$4,000.00</span>
+                <span class="budget-split-val">{{ trip.budget | currency }}</span>
               </div>
+              {% if n > 0 %}
               <div class="budget-split-row">
-                <span class="budget-split-label">Per person (5)</span>
-                <span class="budget-split-val">$800.00</span>
+                <span class="budget-split-label">Per person ({{ n }})</span>
+                <span class="budget-split-val">{{ per_person_budget | currency }}</span>
               </div>
+              {% endif %}
               <div class="budget-split-row">
                 <span class="budget-split-label">Spent so far</span>
-                <span class="budget-split-val col-warning">$3,284.50</span>
+                <span class="budget-split-val col-warning">{{ balances.total | currency }}</span>
               </div>
               <div class="budget-split-row">
                 <span class="budget-split-label">Remaining</span>
-                <span class="budget-split-val col-success">$715.50</span>
+                <span class="budget-split-val {{ 'col-danger' if remaining < 0 else 'col-success' }}">{{ remaining | currency }}</span>
               </div>
             </div>
 
+            {% if trip.budget > 0 %}
             <div class="progress-wrap">
               <div class="progress-header">
                 <span>Usage</span>
-                <strong style="color:var(--warning)">82%</strong>
+                <strong style="color:{{ 'var(--danger)' if budget_pct >= 100 else ('var(--warning)' if budget_pct > 80 else 'var(--accent-lt)') }}">{{ budget_pct }}%</strong>
               </div>
               <div class="progress-track">
-                <div class="progress-fill warn" style="width:82%"></div>
+                <div class="progress-fill {{ 'warn' if budget_pct > 80 else '' }}" style="width:{{ budget_pct }}%"></div>
               </div>
             </div>
-
+            {% if budget_pct > 80 %}
             <div style="padding:12px;background:var(--warning-bg);border:1px solid rgba(245,158,11,.2);border-radius:var(--radius-sm);font-size:12px;color:var(--warning)">
-              ⚠ You've used 82% of your budget with 5 days remaining.
+              ⚠ You've used {{ budget_pct }}% of your budget.
+              {% if remaining < 0 %}You're over budget by {{ (-remaining) | currency }}.{% endif %}
             </div>
+            {% endif %}
+            {% endif %}
 
           </div>
         </div>
 
-        <!-- SPLIT SETTINGS -->
+        {% if is_owner %}
+        <!-- DEFAULT SPLIT -->
         <div class="card">
-          <div class="card-head">
-            <span class="card-title">Default Split</span>
-          </div>
+          <div class="card-head"><span class="card-title">Default Split</span></div>
           <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
-
             <div class="form-group">
               <label class="form-label">Split method</label>
               <select class="form-select" name="split_method" form="trip-form">
-                <option value="equal" {% if trip.split_method == 'equal' %}selected{% endif %}>Equal split (default)</option>
+                <option value="equal"      {% if trip.split_method == 'equal'      %}selected{% endif %}>Equal split (default)</option>
                 <option value="percentage" {% if trip.split_method == 'percentage' %}selected{% endif %}>Percentage split</option>
-                <option value="custom" {% if trip.split_method == 'custom' %}selected{% endif %}>Custom amounts</option>
+                <option value="custom"     {% if trip.split_method == 'custom'     %}selected{% endif %}>Custom amounts</option>
               </select>
             </div>
-
             <div style="font-size:12px;color:var(--muted);padding:10px 12px;background:var(--surface2);border-radius:var(--radius-sm)">
-              Each expense will be split equally among all members by default. You can override this per expense.
+              Expenses will be split equally among all members by default. Override per expense on the Expenses page.
             </div>
-
           </div>
         </div>
 
@@ -296,9 +372,10 @@
             <div style="display:flex;justify-content:space-between;align-items:center">
               <div>
                 <div style="font-size:13px;font-weight:500">Reset all expenses</div>
-                <div style="font-size:12px;color:var(--muted);margin-top:2px">Remove all 18 expenses from this trip</div>
+                <div style="font-size:12px;color:var(--muted);margin-top:2px">Remove all expenses from this trip</div>
               </div>
-              <form method="POST" action="/trip/reset" style="display:inline">
+              <form method="POST" action="/trip/reset" style="display:inline"
+                    onsubmit="return confirm('Reset all expenses? This cannot be undone.')">
                 <button type="submit" class="btn btn-danger btn-sm">Reset</button>
               </form>
             </div>
@@ -306,14 +383,16 @@
             <div style="display:flex;justify-content:space-between;align-items:center">
               <div>
                 <div style="font-size:13px;font-weight:500">Delete trip</div>
-                <div style="font-size:12px;color:var(--muted);margin-top:2px">Permanently remove Bali 2025 and all data</div>
+                <div style="font-size:12px;color:var(--muted);margin-top:2px">Permanently remove {{ trip.name }} and all data</div>
               </div>
-              <form method="POST" action="/trip/delete" style="display:inline">
+              <form method="POST" action="/trip/delete" style="display:inline"
+                    onsubmit="return confirm('Delete this trip? This cannot be undone.')">
                 <button type="submit" class="btn btn-danger btn-sm">Delete</button>
               </form>
             </div>
           </div>
         </div>
+        {% endif %}
 
       </div><!-- /trip-right -->
     </div>
@@ -323,5 +402,13 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
 <script src="/static/globe.js"></script>
 <script src="/static/mobile.js"></script>
+<script>
+function toggleRename(idx, show) {
+  document.getElementById('minfo-'   + idx).style.display = show ? 'none'  : '';
+  document.getElementById('mbtns-'   + idx).style.display = show ? 'none'  : '';
+  document.getElementById('mrename-' + idx).style.display = show ? 'flex'  : 'none';
+  if (show) document.querySelector('#mrename-' + idx + ' input[name=new_name]').focus();
+}
+</script>
 </body>
 </html>

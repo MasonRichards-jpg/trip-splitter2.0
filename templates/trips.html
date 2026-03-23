@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PayBack — My Trips</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <div class="brand-icon">P$</div>
+    <span class="brand-name">PayBack</span>
+  </div>
+  <nav class="sidebar-nav">
+    <span class="nav-label">Menu</span>
+    <a href="/"          class="nav-item"><span class="ni">⊞</span> <span>Overview</span></a>
+    <a href="/expenses"  class="nav-item"><span class="ni">◈</span> <span>Expenses</span></a>
+    <a href="/balances"  class="nav-item"><span class="ni">⚖</span> <span>Balances</span></a>
+    <a href="/settle-up" class="nav-item"><span class="ni">✓</span> <span>Settle Up</span></a>
+    <a href="/trip"      class="nav-item"><span class="ni">✦</span> <span>Trip</span></a>
+  </nav>
+  <div class="sidebar-bottom">
+    {% if current_user %}
+    <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--surface2);border-radius:var(--radius-sm);margin-bottom:12px">
+      <span class="av sm" style="--color:#6366f1">{{ current_user.name[0].upper() }}</span>
+      <span style="flex:1;font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)">{{ current_user.name }}</span>
+      <a href="/logout" style="font-size:11px;color:var(--muted);white-space:nowrap;padding:3px 7px;background:var(--surface);border:1px solid var(--border);border-radius:4px">Sign out</a>
+    </div>
+    {% endif %}
+  </div>
+</aside>
+
+<!-- MAIN -->
+<div class="main">
+  <header class="topbar">
+    <div class="topbar-left">
+      <h1 class="page-title">My Trips</h1>
+      <p class="page-sub">{{ user_trips | length }} trip{{ 's' if user_trips | length != 1 else '' }} you're part of</p>
+    </div>
+    <div class="topbar-right">
+      <form method="POST" action="/trip/new" style="display:inline">
+        <button type="submit" class="btn btn-primary btn-sm">+ New Trip</button>
+      </form>
+    </div>
+  </header>
+
+  <div class="page-body">
+    {% if user_trips %}
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px">
+      {% for t in user_trips %}
+      {% set is_active = (t.id == active_trip_id) %}
+      {% set is_owner  = (current_user and t.owner_id == current_user.id) %}
+      <div class="card" style="padding:0;overflow:hidden;{% if is_active %}border-color:var(--accent);box-shadow:0 0 0 1px var(--accent){% endif %}">
+
+        <!-- Cover bar -->
+        <div style="padding:20px 20px 16px;border-bottom:1px solid var(--border)">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+            <span style="font-size:32px;line-height:1">{{ t.cover }}</span>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:15px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.name }}</div>
+              {% if t.destination %}
+              <div style="font-size:12px;color:var(--muted);margin-top:1px">{{ t.destination }}</div>
+              {% endif %}
+            </div>
+            {% if is_active %}
+            <span style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--accent-lt);background:var(--accent-glow);padding:3px 8px;border-radius:20px;white-space:nowrap">Active</span>
+            {% endif %}
+          </div>
+
+          <div style="display:flex;gap:16px;font-size:12px;color:var(--muted)">
+            <span>{{ t.start_date | fmtdate }} — {{ t.end_date | fmtdate }}</span>
+            <span>{{ t.members | length }} member{{ 's' if t.members | length != 1 else '' }}</span>
+          </div>
+        </div>
+
+        <!-- Member avatars -->
+        <div style="padding:12px 20px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border)">
+          <div style="display:flex;gap:-4px">
+            {% for m in t.members[:6] %}
+            <span class="av sm" style="--color:{{ member_color(m) }};margin-right:-6px;border:2px solid var(--surface)">{{ m[0] }}</span>
+            {% endfor %}
+            {% if t.members | length > 6 %}
+            <span style="font-size:11px;color:var(--muted);margin-left:10px;align-self:center">+{{ t.members | length - 6 }} more</span>
+            {% endif %}
+          </div>
+          <span style="margin-left:auto;font-size:11px;color:var(--muted)">
+            {% if is_owner %}Organizer{% else %}Member{% endif %}
+          </span>
+        </div>
+
+        <!-- Action -->
+        <div style="padding:12px 20px">
+          {% if is_active %}
+          <a href="/" class="btn btn-ghost btn-sm" style="width:100%;justify-content:center">View Dashboard →</a>
+          {% else %}
+          <form method="POST" action="/trips/switch/{{ t.id }}">
+            <button type="submit" class="btn btn-primary btn-sm" style="width:100%;justify-content:center">Switch to this Trip</button>
+          </form>
+          {% endif %}
+        </div>
+
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="card">
+      <div class="card-body" style="text-align:center;padding:48px;color:var(--muted)">
+        No trips yet. <a href="/trip" style="color:var(--accent-lt)">Create one →</a>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+<script src="/static/globe.js"></script>
+<script src="/static/mobile.js"></script>
+</body>
+</html>

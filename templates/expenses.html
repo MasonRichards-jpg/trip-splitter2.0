@@ -9,6 +9,8 @@
 </head>
 <body>
 
+{% set cat_icons  = {'food': '🍜', 'stay': '🏨', 'transport': '🏍', 'activity': '🌊', 'shopping': '🛍', 'other': '··'} %}
+
 <!-- SIDEBAR -->
 <aside class="sidebar">
   <div class="sidebar-brand">
@@ -17,23 +19,21 @@
   </div>
   <nav class="sidebar-nav">
     <span class="nav-label">Menu</span>
-    <a href="/" class="nav-item">
-      <span class="ni">⊞</span> <span>Overview</span>
-    </a>
-    <a href="/expenses" class="nav-item active">
-      <span class="ni">◈</span> <span>Expenses</span>
-    </a>
-    <a href="/balances" class="nav-item">
-      <span class="ni">⚖</span> <span>Balances</span>
-    </a>
-    <a href="/settle-up" class="nav-item">
-      <span class="ni">✓</span> <span>Settle Up</span>
-    </a>
-    <a href="/trip" class="nav-item">
-      <span class="ni">✦</span> <span>Trip</span>
-    </a>
+    <a href="/"         class="nav-item"><span class="ni">⊞</span> <span>Overview</span></a>
+    <a href="/expenses" class="nav-item active"><span class="ni">◈</span> <span>Expenses</span></a>
+    <a href="/balances" class="nav-item"><span class="ni">⚖</span> <span>Balances</span></a>
+    <a href="/settle-up" class="nav-item"><span class="ni">✓</span> <span>Settle Up</span></a>
+    <a href="/trips"    class="nav-item"><span class="ni">⊹</span> <span>My Trips</span></a>
+    <a href="/trip"     class="nav-item"><span class="ni">✦</span> <span>Trip</span></a>
   </nav>
   <div class="sidebar-bottom">
+    {% if current_user %}
+    <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--surface2);border-radius:var(--radius-sm);margin-bottom:12px">
+      <span class="av sm" style="--color:#6366f1">{{ current_user.name[0].upper() }}</span>
+      <span style="flex:1;font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)">{{ current_user.name }}</span>
+      <a href="/logout" style="font-size:11px;color:var(--muted);white-space:nowrap;padding:3px 7px;background:var(--surface);border:1px solid var(--border);border-radius:4px">Sign out</a>
+    </div>
+    {% endif %}
     <div class="trip-card">
       <div class="trip-card-top">
         <span class="trip-card-label">Active Trip</span>
@@ -43,7 +43,7 @@
       <div class="trip-card-dates">{{ trip.start_date | fmtdate }} — {{ trip.end_date | fmtdate }}</div>
       <div class="trip-avatars">
         {% for member in trip.members %}
-        <span class="av sm" style="--color:{{ loop.cycle('#6366f1', '#ec4899', '#14b8a6', '#f59e0b', '#22c55e', '#64748b', '#8b5cf6', '#f97316') }}">{{ member[0] }}</span>
+        <span class="av sm" style="--color:{{ member_color(member) }}">{{ member[0] }}</span>
         {% endfor %}
       </div>
     </div>
@@ -55,53 +55,55 @@
   <header class="topbar">
     <div class="topbar-left">
       <h1 class="page-title">Expenses</h1>
-      <p class="page-sub">18 expenses · $3,284.50 total</p>
+      <p class="page-sub">{{ expenses.total_count }} expense{{ 's' if expenses.total_count != 1 else '' }} · {{ expenses.total_amount | currency }} total</p>
     </div>
     <div class="topbar-right">
-      <form method="GET" action="/expenses/export" style="display:inline">
-        <button type="submit" class="btn btn-ghost btn-sm">Export CSV</button>
-      </form>
+      <a href="/expenses/export" class="btn btn-ghost btn-sm">Export CSV</a>
     </div>
   </header>
 
   <div class="page-body">
     <div class="expenses-layout">
 
-      <!-- ADD EXPENSE FORM -->
+      <!-- ADD / EDIT EXPENSE FORM -->
       <div>
         <div class="card add-form">
           <div class="card-head">
-            <span class="card-title">Add Expense</span>
+            <span class="card-title">{% if editing %}Edit Expense{% else %}Add Expense{% endif %}</span>
+            {% if editing %}<a href="/expenses" class="card-link">Cancel</a>{% endif %}
           </div>
           <div class="card-body">
-          <form method="POST" action="/expenses/add">
+          <form method="POST" action="{% if editing %}/expenses/{{ editing.id }}/update{% else %}/expenses/add{% endif %}">
 
             <div class="form-group">
               <label class="form-label">Description</label>
-              <input class="form-input" type="text" name="description" placeholder="e.g. Dinner at The Shack" />
+              <input class="form-input" type="text" name="description"
+                     value="{{ editing.description if editing else '' }}"
+                     placeholder="e.g. Dinner at The Shack" required />
             </div>
 
             <div class="form-group">
-              <label class="form-label">Amount (USD)</label>
+              <label class="form-label">Amount ({{ trip.currency }})</label>
               <div class="input-prefix">
                 <span class="prefix">$</span>
-                <input class="form-input" type="text" name="amount" placeholder="0.00" />
+                <input class="form-input" type="text" name="amount"
+                       value="{{ editing.amount if editing else '' }}"
+                       placeholder="0.00" required />
               </div>
             </div>
 
             <div class="form-row form-row-2">
               <div class="form-group">
                 <label class="form-label">Date</label>
-                <input class="form-input" type="date" name="date" value="2025-06-17" />
+                <input class="form-input" type="date" name="date"
+                       value="{{ editing.date if editing else today }}" required />
               </div>
               <div class="form-group">
                 <label class="form-label">Paid by</label>
                 <select class="form-select" name="paid_by">
-                  <option>Alex</option>
-                  <option>Sara</option>
-                  <option>Mike</option>
-                  <option>Jess</option>
-                  <option>Leo</option>
+                  {% for m in trip.members %}
+                  <option value="{{ m }}" {% if editing and editing.paid_by == m %}selected{% endif %}>{{ m }}</option>
+                  {% endfor %}
                 </select>
               </div>
             </div>
@@ -109,56 +111,65 @@
             <div class="form-group">
               <label class="form-label">Category</label>
               <div class="cat-picker">
-                <label class="cat-opt"><input type="radio" name="category" value="food" hidden checked>🍜 Food</label>
-                <label class="cat-opt"><input type="radio" name="category" value="stay" hidden>🏨 Stay</label>
-                <label class="cat-opt"><input type="radio" name="category" value="transport" hidden>🏍 Transport</label>
-                <label class="cat-opt"><input type="radio" name="category" value="activity" hidden>🌊 Activity</label>
-                <label class="cat-opt"><input type="radio" name="category" value="shopping" hidden>🛍 Shopping</label>
-                <label class="cat-opt"><input type="radio" name="category" value="other" hidden>· · Other</label>
+                {% for val, label in [('food','🍜 Food'),('stay','🏨 Stay'),('transport','🏍 Transport'),('activity','🌊 Activity'),('shopping','🛍 Shopping'),('other','·· Other')] %}
+                <label class="cat-opt">
+                  <input type="radio" name="category" value="{{ val }}" hidden
+                         {% if (editing and editing.category == val) or (not editing and val == 'food') %}checked{% endif %}>
+                  {{ label }}
+                </label>
+                {% endfor %}
               </div>
             </div>
 
             <div class="form-group">
               <label class="form-label">Split between</label>
               <div class="split-opts">
-                <label class="split-chip"><input type="checkbox" name="split" value="Alex" hidden checked>Alex</label>
-                <label class="split-chip"><input type="checkbox" name="split" value="Sara" hidden checked>Sara</label>
-                <label class="split-chip"><input type="checkbox" name="split" value="Mike" hidden checked>Mike</label>
-                <label class="split-chip"><input type="checkbox" name="split" value="Jess" hidden checked>Jess</label>
-                <label class="split-chip"><input type="checkbox" name="split" value="Leo" hidden checked>Leo</label>
+                {% for m in trip.members %}
+                <label class="split-chip">
+                  <input type="checkbox" name="split" value="{{ m }}" hidden
+                         {% if (editing and m in editing.split) or (not editing) %}checked{% endif %}>
+                  {{ m }}
+                </label>
+                {% endfor %}
               </div>
             </div>
 
             <div class="form-group">
               <label class="form-label">Notes (optional)</label>
-              <textarea class="form-textarea" name="notes" placeholder="Any extra details…"></textarea>
+              <textarea class="form-textarea" name="notes" placeholder="Any extra details…">{{ editing.notes if editing else '' }}</textarea>
             </div>
 
             <div style="display:flex;gap:8px;padding-top:4px">
+              {% if editing %}
+              <a href="/expenses" class="btn btn-ghost" style="flex:1;justify-content:center">Cancel</a>
+              {% else %}
               <button type="reset" class="btn btn-ghost" style="flex:1;justify-content:center">Clear</button>
-              <button type="submit" class="btn btn-primary" style="flex:2;justify-content:center">Save Expense</button>
+              {% endif %}
+              <button type="submit" class="btn btn-primary" style="flex:2;justify-content:center">
+                {% if editing %}Update Expense{% else %}Save Expense{% endif %}
+              </button>
             </div>
 
           </form>
           </div>
         </div>
 
-        <!-- QUICK STATS below form -->
+        <!-- QUICK STATS -->
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px">
           <div class="stat-card">
-            <div class="stat-card-label">This Week</div>
-            <div class="stat-card-value" style="font-size:20px">$864.50</div>
-            <div class="stat-card-sub col-muted">7 expenses</div>
+            <div class="stat-card-label">Today</div>
+            <div class="stat-card-value" style="font-size:20px">{{ expenses.today_total | currency }}</div>
+            <div class="stat-card-sub col-muted">{{ expenses.today_count }} expense{{ 's' if expenses.today_count != 1 else '' }}</div>
           </div>
           <div class="stat-card">
-            <div class="stat-card-label">Today</div>
-            <div class="stat-card-value" style="font-size:20px">$159.00</div>
-            <div class="stat-card-sub col-muted">2 expenses</div>
+            <div class="stat-card-label">Total</div>
+            <div class="stat-card-value" style="font-size:20px">{{ expenses.total_amount | currency }}</div>
+            <div class="stat-card-sub col-muted">{{ expenses.total_count }} expenses</div>
           </div>
         </div>
       </div>
 
-      <!-- EXPENSE TABLE PANEL -->
+      <!-- EXPENSE TABLE -->
       <div class="card" style="display:flex;flex-direction:column;overflow:hidden">
         <form method="GET" action="/expenses">
         <div class="card-head" style="flex-shrink:0">
@@ -166,34 +177,36 @@
           <div style="display:flex;align-items:center;gap:8px">
             <span style="font-size:12px;color:var(--muted)">Sort:</span>
             <select class="form-select" name="sort" style="width:auto;padding:4px 8px;font-size:12px" onchange="this.form.submit()">
-              <option value="newest">Newest first</option>
-              <option value="oldest">Oldest first</option>
-              <option value="highest">Highest amount</option>
-              <option value="lowest">Lowest amount</option>
+              <option value="newest"  {% if sort == 'newest'  %}selected{% endif %}>Newest first</option>
+              <option value="oldest"  {% if sort == 'oldest'  %}selected{% endif %}>Oldest first</option>
+              <option value="highest" {% if sort == 'highest' %}selected{% endif %}>Highest amount</option>
+              <option value="lowest"  {% if sort == 'lowest'  %}selected{% endif %}>Lowest amount</option>
             </select>
           </div>
         </div>
 
-        <!-- filters -->
+        <!-- Filters -->
         <div style="padding:12px 20px;border-bottom:1px solid var(--border);display:flex;gap:10px;flex-wrap:wrap;flex-shrink:0">
           <div class="search-wrap" style="max-width:220px">
             <span class="search-icon">⌕</span>
-            <input class="form-input" type="text" name="search" placeholder="Search expenses…" style="font-size:12px;padding:6px 10px 6px 28px" />
+            <input class="form-input" type="text" name="search" value="{{ search }}"
+                   placeholder="Search expenses…" style="font-size:12px;padding:6px 10px 6px 28px" />
           </div>
           <div class="filter-chips">
-            <label class="fchip"><input type="radio" name="cat_filter" value="all" hidden checked>All</label>
-            <label class="fchip"><input type="radio" name="cat_filter" value="food" hidden>🍜 Food</label>
-            <label class="fchip"><input type="radio" name="cat_filter" value="stay" hidden>🏨 Stay</label>
-            <label class="fchip"><input type="radio" name="cat_filter" value="transport" hidden>🏍 Transport</label>
-            <label class="fchip"><input type="radio" name="cat_filter" value="activity" hidden>🌊 Activity</label>
-            <label class="fchip"><input type="radio" name="cat_filter" value="shopping" hidden>🛍 Shopping</label>
+            <label class="fchip"><input type="radio" name="cat_filter" value="all"      hidden {% if cat_filter == 'all'      %}checked{% endif %}>All</label>
+            <label class="fchip"><input type="radio" name="cat_filter" value="food"     hidden {% if cat_filter == 'food'     %}checked{% endif %}>🍜 Food</label>
+            <label class="fchip"><input type="radio" name="cat_filter" value="stay"     hidden {% if cat_filter == 'stay'     %}checked{% endif %}>🏨 Stay</label>
+            <label class="fchip"><input type="radio" name="cat_filter" value="transport" hidden {% if cat_filter == 'transport' %}checked{% endif %}>🏍 Transport</label>
+            <label class="fchip"><input type="radio" name="cat_filter" value="activity" hidden {% if cat_filter == 'activity' %}checked{% endif %}>🌊 Activity</label>
+            <label class="fchip"><input type="radio" name="cat_filter" value="shopping" hidden {% if cat_filter == 'shopping' %}checked{% endif %}>🛍 Shopping</label>
           </div>
           <button type="submit" class="btn btn-ghost btn-xs">Apply</button>
         </div>
         </form>
 
-        <!-- table -->
+        <!-- Table -->
         <div style="overflow-y:auto;flex:1">
+          {% if expenses.expense_list %}
           <table class="expense-table">
             <thead>
               <tr>
@@ -207,191 +220,71 @@
               </tr>
             </thead>
             <tbody>
-              <tr>
+              {% for e in expenses.expense_list %}
+              <tr {% if editing and editing.id == e.id %}style="background:var(--accent-glow)"{% endif %}>
                 <td>
-                  <div class="td-desc-main">Dinner at Sarong</div>
-                  <div class="td-desc-sub">Romantic beachside dinner</div>
+                  <div class="td-desc-main">{{ e.description }}</div>
+                  {% if e.notes %}<div class="td-desc-sub">{{ e.notes }}</div>{% endif %}
                 </td>
-                <td><span class="tag tag-food">🍜 Food</span></td>
-                <td><div class="td-payer"><span class="av sm" style="--color:#6366f1">A</span> Alex</div></td>
-                <td style="color:var(--muted);font-size:12px">Jun 14</td>
-                <td style="color:var(--muted);font-size:12px">5 people</td>
-                <td class="amt">$186.00</td>
+                <td><span class="tag tag-{{ e.category }}">{{ cat_icons.get(e.category, '·') }} {{ e.category | capitalize }}</span></td>
+                <td>
+                  <div class="td-payer">
+                    <span class="av sm" style="--color:{{ member_color(e.paid_by) }}">{{ e.paid_by[0] }}</span>
+                    {{ e.paid_by }}
+                  </div>
+                </td>
+                <td style="color:var(--muted);font-size:12px">{{ e.date | fmtdate }}</td>
+                <td style="color:var(--muted);font-size:12px">{{ e.split | length }} {{ 'person' if e.split | length == 1 else 'people' }}</td>
+                <td class="amt">{{ e.amount | currency }}</td>
                 <td>
                   <div class="action-btns">
-                    <a href="/expenses/1/edit" class="btn btn-ghost btn-xs">Edit</a>
-                    <form method="POST" action="/expenses/1/delete" style="display:inline"><button type="submit" class="btn btn-danger btn-xs">Del</button></form>
+                    <a href="/expenses/{{ e.id }}/edit" class="btn btn-ghost btn-xs">Edit</a>
+                    <form method="POST" action="/expenses/{{ e.id }}/delete" style="display:inline">
+                      <button type="submit" class="btn btn-danger btn-xs">Del</button>
+                    </form>
                   </div>
                 </td>
               </tr>
-              <tr>
-                <td>
-                  <div class="td-desc-main">Scooter Rental × 5</div>
-                  <div class="td-desc-sub">Full day rental</div>
-                </td>
-                <td><span class="tag tag-transport">🏍 Transport</span></td>
-                <td><div class="td-payer"><span class="av sm" style="--color:#ec4899">S</span> Sara</div></td>
-                <td style="color:var(--muted);font-size:12px">Jun 14</td>
-                <td style="color:var(--muted);font-size:12px">5 people</td>
-                <td class="amt">$120.00</td>
-                <td>
-                  <div class="action-btns">
-                    <a href="/expenses/2/edit" class="btn btn-ghost btn-xs">Edit</a>
-                    <form method="POST" action="/expenses/2/delete" style="display:inline"><button type="submit" class="btn btn-danger btn-xs">Del</button></form>
-                  </div>
-                </td>
-              </tr>
-              <tr>
-                <td>
-                  <div class="td-desc-main">Villa Ubud — Night 3</div>
-                  <div class="td-desc-sub">5-bedroom villa</div>
-                </td>
-                <td><span class="tag tag-stay">🏨 Stay</span></td>
-                <td><div class="td-payer"><span class="av sm" style="--color:#14b8a6">M</span> Mike</div></td>
-                <td style="color:var(--muted);font-size:12px">Jun 15</td>
-                <td style="color:var(--muted);font-size:12px">5 people</td>
-                <td class="amt">$350.00</td>
-                <td>
-                  <div class="action-btns">
-                    <a href="/expenses/3/edit" class="btn btn-ghost btn-xs">Edit</a>
-                    <form method="POST" action="/expenses/3/delete" style="display:inline"><button type="submit" class="btn btn-danger btn-xs">Del</button></form>
-                  </div>
-                </td>
-              </tr>
-              <tr>
-                <td>
-                  <div class="td-desc-main">Surf Lesson — Kuta</div>
-                  <div class="td-desc-sub">2hr beginner session</div>
-                </td>
-                <td><span class="tag tag-activity">🌊 Activity</span></td>
-                <td><div class="td-payer"><span class="av sm" style="--color:#f59e0b">J</span> Jess</div></td>
-                <td style="color:var(--muted);font-size:12px">Jun 16</td>
-                <td style="color:var(--muted);font-size:12px">5 people</td>
-                <td class="amt">$225.00</td>
-                <td>
-                  <div class="action-btns">
-                    <a href="/expenses/4/edit" class="btn btn-ghost btn-xs">Edit</a>
-                    <form method="POST" action="/expenses/4/delete" style="display:inline"><button type="submit" class="btn btn-danger btn-xs">Del</button></form>
-                  </div>
-                </td>
-              </tr>
-              <tr>
-                <td>
-                  <div class="td-desc-main">Café Breakfasts</div>
-                  <div class="td-desc-sub">Morning coffees + food</div>
-                </td>
-                <td><span class="tag tag-food">🍜 Food</span></td>
-                <td><div class="td-payer"><span class="av sm" style="--color:#22c55e">L</span> Leo</div></td>
-                <td style="color:var(--muted);font-size:12px">Jun 16</td>
-                <td style="color:var(--muted);font-size:12px">5 people</td>
-                <td class="amt">$64.50</td>
-                <td>
-                  <div class="action-btns">
-                    <a href="/expenses/5/edit" class="btn btn-ghost btn-xs">Edit</a>
-                    <form method="POST" action="/expenses/5/delete" style="display:inline"><button type="submit" class="btn btn-danger btn-xs">Del</button></form>
-                  </div>
-                </td>
-              </tr>
-              <tr>
-                <td>
-                  <div class="td-desc-main">Ubud Market Souvenirs</div>
-                  <div class="td-desc-sub">Gifts & keepsakes</div>
-                </td>
-                <td><span class="tag tag-shopping">🛍 Shopping</span></td>
-                <td><div class="td-payer"><span class="av sm" style="--color:#6366f1">A</span> Alex</div></td>
-                <td style="color:var(--muted);font-size:12px">Jun 17</td>
-                <td style="color:var(--muted);font-size:12px">3 people</td>
-                <td class="amt">$95.00</td>
-                <td>
-                  <div class="action-btns">
-                    <a href="/expenses/6/edit" class="btn btn-ghost btn-xs">Edit</a>
-                    <form method="POST" action="/expenses/6/delete" style="display:inline"><button type="submit" class="btn btn-danger btn-xs">Del</button></form>
-                  </div>
-                </td>
-              </tr>
-              <tr>
-                <td>
-                  <div class="td-desc-main">Waterfall Hike Entry</div>
-                  <div class="td-desc-sub">Sekumpul waterfall</div>
-                </td>
-                <td><span class="tag tag-activity">🌊 Activity</span></td>
-                <td><div class="td-payer"><span class="av sm" style="--color:#ec4899">S</span> Sara</div></td>
-                <td style="color:var(--muted);font-size:12px">Jun 17</td>
-                <td style="color:var(--muted);font-size:12px">5 people</td>
-                <td class="amt">$75.00</td>
-                <td>
-                  <div class="action-btns">
-                    <a href="/expenses/7/edit" class="btn btn-ghost btn-xs">Edit</a>
-                    <form method="POST" action="/expenses/7/delete" style="display:inline"><button type="submit" class="btn btn-danger btn-xs">Del</button></form>
-                  </div>
-                </td>
-              </tr>
-              <tr>
-                <td>
-                  <div class="td-desc-main">Taxi to Airport</div>
-                  <div class="td-desc-sub">Ngurah Rai airport</div>
-                </td>
-                <td><span class="tag tag-transport">🏍 Transport</span></td>
-                <td><div class="td-payer"><span class="av sm" style="--color:#14b8a6">M</span> Mike</div></td>
-                <td style="color:var(--muted);font-size:12px">Jun 17</td>
-                <td style="color:var(--muted);font-size:12px">5 people</td>
-                <td class="amt">$45.00</td>
-                <td>
-                  <div class="action-btns">
-                    <a href="/expenses/8/edit" class="btn btn-ghost btn-xs">Edit</a>
-                    <form method="POST" action="/expenses/8/delete" style="display:inline"><button type="submit" class="btn btn-danger btn-xs">Del</button></form>
-                  </div>
-                </td>
-              </tr>
-              <tr>
-                <td>
-                  <div class="td-desc-main">Spa Day — Seminyak</div>
-                  <div class="td-desc-sub">Massage + treatments</div>
-                </td>
-                <td><span class="tag tag-activity">🌊 Activity</span></td>
-                <td><div class="td-payer"><span class="av sm" style="--color:#f59e0b">J</span> Jess</div></td>
-                <td style="color:var(--muted);font-size:12px">Jun 18</td>
-                <td style="color:var(--muted);font-size:12px">4 people</td>
-                <td class="amt">$280.00</td>
-                <td>
-                  <div class="action-btns">
-                    <a href="/expenses/9/edit" class="btn btn-ghost btn-xs">Edit</a>
-                    <form method="POST" action="/expenses/9/delete" style="display:inline"><button type="submit" class="btn btn-danger btn-xs">Del</button></form>
-                  </div>
-                </td>
-              </tr>
-              <tr>
-                <td>
-                  <div class="td-desc-main">Nasi Goreng Dinner</div>
-                  <div class="td-desc-sub">Street food night</div>
-                </td>
-                <td><span class="tag tag-food">🍜 Food</span></td>
-                <td><div class="td-payer"><span class="av sm" style="--color:#22c55e">L</span> Leo</div></td>
-                <td style="color:var(--muted);font-size:12px">Jun 18</td>
-                <td style="color:var(--muted);font-size:12px">5 people</td>
-                <td class="amt">$42.00</td>
-                <td>
-                  <div class="action-btns">
-                    <a href="/expenses/10/edit" class="btn btn-ghost btn-xs">Edit</a>
-                    <form method="POST" action="/expenses/10/delete" style="display:inline"><button type="submit" class="btn btn-danger btn-xs">Del</button></form>
-                  </div>
-                </td>
-              </tr>
+              {% endfor %}
             </tbody>
           </table>
+          {% else %}
+          <div style="text-align:center;padding:48px 24px;color:var(--muted)">
+            {% if search or cat_filter != 'all' %}
+            No expenses match your filters. <a href="/expenses" style="color:var(--accent-lt)">Clear filters →</a>
+            {% else %}
+            No expenses yet. Add one using the form on the left.
+            {% endif %}
+          </div>
+          {% endif %}
         </div>
 
-        <!-- table footer -->
+        <!-- Pagination -->
+        {% if expenses.pages > 1 %}
         <div style="padding:12px 20px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0;background:var(--surface2)">
-          <span style="font-size:12px;color:var(--muted)">Showing 10 of 18 expenses</span>
+          <span style="font-size:12px;color:var(--muted)">
+            Showing {{ ((expenses.page - 1) * expenses.page_size) + 1 }}–{{ [expenses.page * expenses.page_size, expenses.total_count] | min }} of {{ expenses.total_count }}
+          </span>
           <div style="display:flex;gap:6px">
-            <a href="/expenses?page=1" class="btn btn-ghost btn-xs">← Prev</a>
-            <a href="/expenses?page=1" class="btn btn-ghost btn-xs" style="background:var(--accent-glow);color:var(--accent-lt);border-color:var(--accent)">1</a>
-            <a href="/expenses?page=2" class="btn btn-ghost btn-xs">2</a>
-            <a href="/expenses?page=2" class="btn btn-ghost btn-xs">Next →</a>
+            {% if expenses.page > 1 %}
+            <a href="/expenses?page={{ expenses.page - 1 }}&sort={{ sort }}&search={{ search }}&cat_filter={{ cat_filter }}"
+               class="btn btn-ghost btn-xs">← Prev</a>
+            {% endif %}
+            {% for p in range(1, expenses.pages + 1) %}
+            <a href="/expenses?page={{ p }}&sort={{ sort }}&search={{ search }}&cat_filter={{ cat_filter }}"
+               class="btn btn-ghost btn-xs {% if p == expenses.page %}active{% endif %}"
+               style="{% if p == expenses.page %}background:var(--accent-glow);color:var(--accent-lt);border-color:var(--accent){% endif %}">
+              {{ p }}
+            </a>
+            {% endfor %}
+            {% if expenses.page < expenses.pages %}
+            <a href="/expenses?page={{ expenses.page + 1 }}&sort={{ sort }}&search={{ search }}&cat_filter={{ cat_filter }}"
+               class="btn btn-ghost btn-xs">Next →</a>
+            {% endif %}
           </div>
         </div>
-      </div>
+        {% endif %}
+      </div><!-- /table card -->
 
     </div>
   </div>
