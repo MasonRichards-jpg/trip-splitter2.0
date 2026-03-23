@@ -96,7 +96,7 @@ def _apply_data(d):
         settlements[:] = d.get('settlements', [])
 
 
-def _load():
+def _load(silent=False):
     global trips, expenses, settlements, users, _next_id, _next_user_id, _next_trip_id, _gh_sha
     if _gh_enabled():
         try:
@@ -107,10 +107,12 @@ def _load():
                 _gh_sha = blob['sha']
                 raw = base64.b64decode(blob['content'])
                 _apply_data(json.loads(raw))
-                print(f'[PayBack] Loaded data from GitHub ({_GH_REPO}/{_GH_PATH})')
+                if not silent:
+                    print(f'[PayBack] Loaded data from GitHub ({_GH_REPO}/{_GH_PATH})')
                 return
             elif r.status_code == 404:
-                print('[PayBack] No data file in GitHub yet — starting fresh')
+                if not silent:
+                    print('[PayBack] No data file in GitHub yet — starting fresh')
                 return
             else:
                 print(f'[PayBack] GitHub load failed ({r.status_code}) — falling back to local file')

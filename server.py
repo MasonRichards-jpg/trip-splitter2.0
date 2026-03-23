@@ -13,6 +13,17 @@ load_dotenv()
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'payback-dev-secret-change-me')
 
+
+@app.before_request
+def refresh_data():
+    """Re-sync in-memory state from GitHub before every request.
+
+    Gunicorn runs multiple workers, each with their own in-memory data.
+    Without this, one worker can create a trip that another worker never sees.
+    """
+    if main._gh_enabled():
+        main._load(silent=True)
+
 # ── Auth helpers ───────────────────────────────────────────────────────────────
 
 def login_required(f):
