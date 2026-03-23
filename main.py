@@ -338,17 +338,33 @@ def verify_invite_token(token, max_age=604800):  # 7 days
         return None
 
 
-def _send_email(to_email, subject, html, text=None):
+def _send_email_resend(to_email, subject, html, text=None):
+    """Send via Resend HTTP API — works on Render (no SMTP port blocks)."""
+    api_key   = os.environ.get('RESEND_API_KEY', '')
+    from_addr = os.environ.get('MAIL_FROM', 'PayBack <onboarding@resend.dev>')
+    r = _http.post(
+        'https://api.resend.com/emails',
+        headers={'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'},
+        json={'from': from_addr, 'to': [to_email], 'subject': subject, 'html': html,
+              **({'text': text} if text else {})},
+        timeout=15,
+    )
+    if r.status_code in (200, 201):
+        print(f'[PayBack] Email sent via Resend to {to_email}')
+        return True
+    print(f'[PayBack] Resend failed ({r.status_code}): {r.text[:200]}')
+    return False
+
+
+def _send_email_smtp(to_email, subject, html, text=None):
+    """Send via SMTP — for local development."""
     server    = os.environ.get('MAIL_SERVER', '')
     port      = int(os.environ.get('MAIL_PORT', 587))
     username  = os.environ.get('MAIL_USERNAME', '')
     password  = os.environ.get('MAIL_PASSWORD', '')
     from_addr = os.environ.get('MAIL_FROM', username)
-
     if not server or not username:
-        print(f'[PayBack] Email not configured — would send to {to_email}: {subject}')
         return False
-
     msg = MIMEMultipart('alternative')
     msg['Subject'] = subject
     msg['From']    = from_addr
@@ -356,41 +372,42 @@ def _send_email(to_email, subject, html, text=None):
     if text:
         msg.attach(MIMEText(text, 'plain'))
     msg.attach(MIMEText(html, 'html'))
+    try:
+        if port == 465:
+            with smtplib.SMTP_SSL(server, port, timeout=15) as smtp:
+                smtp.login(username, password)
+                smtp.sendmail(from_addr, to_email, msg.as_string())
+        else:
+            with smtplib.SMTP(server, port, timeout=15) as smtp:
+                smtp.ehlo(); smtp.starttls(); smtp.ehlo()
+                smtp.login(username, password)
+                smtp.sendmail(from_addr, to_email, msg.as_string())
+        print(f'[PayBack] Email sent via SMTP to {to_email}')
+        return True
+    except Exception as e:
+        print(f'[PayBack] SMTP failed: {e}')
+        return False
 
-    def _do_send():
-        try:
-            if port == 465:
-                with smtplib.SMTP_SSL(server, port, timeout=15) as smtp:
-                    smtp.login(username, password)
-                    smtp.sendmail(from_addr, to_email, msg.as_string())
-            else:
-                with smtplib.SMTP(server, port, timeout=15) as smtp:
-                    smtp.ehlo()
-                    smtp.starttls()
-                    smtp.ehlo()
-                    smtp.login(username, password)
-                    smtp.sendmail(from_addr, to_email, msg.as_string())
-            print(f'[PayBack] Email sent to {to_email}')
-            return True
-        except Exception as e:
-            print(f'[PayBack] Email failed: {e}')
-            return False
 
-    return _do_send  # caller decides sync vs async
+def _do_send(to_email, subject, html, text=None):
+    """Try Resend first (works on Render), fall back to SMTP."""
+    if os.environ.get('RESEND_API_KEY'):
+        return _send_email_resend(to_email, subject, html, text)
+    if os.environ.get('MAIL_SERVER'):
+        return _send_email_smtp(to_email, subject, html, text)
+    print(f'[PayBack] Email not configured — would send to {to_email}: {subject}')
+    return False
 
 
 def _send_email_async(to_email, subject, html, text=None):
     """Fire-and-forget — returns immediately (used for invites)."""
-    fn = _send_email(to_email, subject, html, text)
-    if fn:
-        threading.Thread(target=fn, daemon=True).start()
+    threading.Thread(target=_do_send, args=(to_email, subject, html, text), daemon=True).start()
     return True
 
 
 def _send_email_sync(to_email, subject, html, text=None):
     """Blocking send — returns True/False (used for reminders)."""
-    fn = _send_email(to_email, subject, html, text)
-    return fn() if fn else False
+    return _do_send(to_email, subject, html, text)
 
 
 def send_invite(to_email, invited_by_name, trip_id):

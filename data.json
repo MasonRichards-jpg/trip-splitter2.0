@@ -21,7 +21,7 @@
     },
     {
       "id": 4,
-      "name": "My Trip",
+      "name": "japan",
       "owner_id": 1,
       "member_user_ids": [
         1
@@ -32,10 +32,12 @@
       "currency": "USD",
       "cover": "\u2708\ufe0f",
       "description": "",
-      "budget": 0.0,
+      "budget": 10000.0,
       "split_method": "equal",
       "members": [
-        "Mason Richards"
+        "Mason Richards",
+        "JUSTIN",
+        "masrich18@gmail.com"
       ]
     },
     {
@@ -77,8 +79,32 @@
       ]
     }
   ],
-  "expenses": [],
-  "settlements": [],
+  "expenses": [
+    {
+      "id": 15,
+      "trip_id": 4,
+      "description": "hotel",
+      "amount": 300.0,
+      "date": "2026-03-23",
+      "paid_by": "JUSTIN",
+      "category": "stay",
+      "split": [
+        "Mason Richards",
+        "JUSTIN"
+      ],
+      "notes": ""
+    }
+  ],
+  "settlements": [
+    {
+      "trip_id": 4,
+      "debtor": "Mason Richards",
+      "creditor": "JUSTIN",
+      "amount": 150.0,
+      "status": "settled",
+      "settled_on": "2026-03-23"
+    }
+  ],
   "users": [
     {
       "id": 1,
@@ -95,7 +121,7 @@
       "created_at": "2026-03-23"
     }
   ],
-  "next_id": 15,
+  "next_id": 16,
   "next_user_id": 4,
   "next_trip_id": 8
 }
