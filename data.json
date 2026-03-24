@@ -25,7 +25,8 @@
       "owner_id": 1,
       "member_user_ids": [
         1,
-        4
+        4,
+        3
       ],
       "destination": "",
       "start_date": "2026-03-23",
@@ -37,7 +38,8 @@
       "split_method": "equal",
       "members": [
         "Mason Richards",
-        "aaa"
+        "aaa",
+        "draft"
       ]
     },
     {

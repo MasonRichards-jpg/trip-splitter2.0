@@ -142,6 +142,7 @@ def member_color(name):
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    invite_token = request.form.get("invite_token") or request.args.get("invite")
     if 'user_id' in session:
         return redirect(url_for('index'))
     invite_token = request.args.get('invite', '')
