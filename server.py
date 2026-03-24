@@ -21,8 +21,7 @@ def refresh_data():
     Gunicorn runs multiple workers, each with their own in-memory data.
     Without this, one worker can create a trip that another worker never sees.
     """
-    if main._gh_enabled():
-        main._load(silent=True)
+    main._load(silent=True)
 
 # ── Auth helpers ───────────────────────────────────────────────────────────────
 

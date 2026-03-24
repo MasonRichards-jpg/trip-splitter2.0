@@ -3,7 +3,7 @@ services:
     name: payback
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn server:app
+    startCommand: gunicorn server:app --workers 1
     envVars:
       - key: SECRET_KEY
         generateValue: true
