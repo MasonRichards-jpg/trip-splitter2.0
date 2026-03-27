@@ -58,8 +58,7 @@ def _set_active_trip(user_id):
     if user_trips:
         session['active_trip_id'] = user_trips[0]['id']
     else:
-        t = main.create_trip(user_id, 'My Trip')
-        session['active_trip_id'] = t['id']
+       session.pop('active_trip_id', None)
 
 
 def _require_owner():
@@ -153,19 +152,15 @@ def login():
             request.form.get('password', '')
         )
         if user:
-            session['user_id'] = user['id']
+            session["user_id"] = user['id']
+            next_url = request.args.get('next', '')
+            if next_url.startswith('/join'):
+                return redirect(next_url)
+            invite_token = request.form.get('invite_token') or request.args.get('invite')
             if invite_token:
-                payload = main.verify_invite_token(invite_token)
-                trip_id = payload.get('trip_id') if payload else None
-                trip    = main.get_trip(trip_id) if trip_id else None
-                if trip:
-                    main.add_member(trip_id, user['name'], user_id=user['id'])
-                    session['active_trip_id'] = trip_id
-                    return redirect(url_for('index'))
+                return redirect(url_for('join_trip', token= invite_token))
             _set_active_trip(user['id'])
-            next_url = request.args.get('next') or url_for('index')
-            return redirect(next_url)
-        error = 'Invalid email or password'
+            return redirect(url_for('index'))
     return render_template('login.html', error=error, invite_token=invite_token)
 
 
