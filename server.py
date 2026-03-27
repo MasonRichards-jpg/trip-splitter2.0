@@ -154,7 +154,9 @@ def login():
         if user:
             session["user_id"] = user['id']
             next_url = request.args.get('next', '')
-            if next_url.startswith('/join'):
+            if next_url.startswith('//'):
+                next_url = next_url[1:]
+            if next_url.startswith('/join/'):
                 return redirect(next_url)
             invite_token = request.form.get('invite_token') or request.args.get('invite')
             if invite_token:
