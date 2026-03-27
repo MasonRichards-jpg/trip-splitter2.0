@@ -29,7 +29,7 @@ def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if 'user_id' not in session:
-            return redirect(url_for('login', next=request.path))
+            return redirect(url_for('login', next=request.full_path))
         # User was deleted or data was reset — kill the stale session
         if _current_user() is None:
             session.clear()
@@ -213,18 +213,12 @@ def register():
                 else:
                     session['user_id'] = user['id']
 
-                    payload = main.verify_invite_token(post_tok) if post_tok else None
-                    trip_id = payload.get('trip_id') if payload else None
-                    trip    = main.get_trip(trip_id) if trip_id else None
+                    if post_tok:
+                        return redirect(url_for('join_trip', token=post_tok))
 
-                    if trip:
-                        main.add_member(trip_id, name, user_id=user['id'])
-                        session['active_trip_id'] = trip_id
-                    else:
-                        new_trip = main.create_trip(user['id'], 'My Trip')
-                        session['active_trip_id'] = new_trip['id']
-
+                    _set_active_trip(user['id'])
                     return redirect(url_for('index'))
+
 
     return render_template(
         'register.html',
@@ -554,8 +548,13 @@ def join_trip(token):
     # Already logged in — join immediately
     if 'user_id' in session and _current_user():
         user = _current_user()
-        main.add_member(trip_id, user['name'], user_id=user['id'])
+        user = _current_user()
+
+        if user['id'] not in trip.get('member_user_ids', []):
+            main.add_member(trip_id, user['name'], user_id=user['id'])
+
         session['active_trip_id'] = trip_id
+
         return redirect(url_for('index'))
 
     # Not logged in — send to register (or login) with token
