@@ -4,6 +4,16 @@
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Remove tap highlight on interactive elements */
+a, button, label, .nav-item, .cat-opt, .split-chip, .fchip, .btn, .cover-option {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Faster tap response — no double-tap-to-zoom delay on buttons */
+.btn, button, .nav-item, .cat-opt, .split-chip, .fchip, .cover-option {
+  touch-action: manipulation;
+}
+
 :root {
   --bg:          #080b14;
   --surface:     #0f1220;
@@ -264,6 +274,8 @@ a { text-decoration: none; color: inherit; }
 .page-body {
   flex: 1;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
   padding: 24px 28px;
   display: flex;
   flex-direction: column;
@@ -1349,13 +1361,46 @@ a { text-decoration: none; color: inherit; }
   .txn-table td,
   .expense-table th,
   .expense-table td { padding: 9px 10px; }
+
+  /* ── iOS Safari — prevent auto-zoom on inputs ─────────── */
+  .form-input,
+  .form-select,
+  .form-textarea { font-size: 16px; }
+
+  /* ── Action buttons — always visible on touch ──────────── */
+  .action-btns { opacity: 1; }
+
+  /* ── Stats row — override any inline grid-template ──────── */
+  .stats-row { grid-template-columns: 1fr 1fr !important; }
+
+  /* ── Contribution breakdown — restore name label ────────── */
+  .contrib-meta { display: flex; }
+  .contrib-sub  { display: none; }
+  .contrib-name { font-size: 11px; }
+  .contrib-row  { grid-template-columns: 28px 70px 1fr 46px; gap: 6px; }
+
+  /* ── Safe area insets for notched iPhones ──────────────── */
+  .sidebar {
+    height: calc(58px + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .main {
+    height: calc(100vh - 58px - env(safe-area-inset-bottom));
+  }
+
+  /* ── Topbar right — wrap buttons if needed ─────────────── */
+  .topbar-right { flex-wrap: wrap; gap: 6px; }
+
+  /* ── Touch targets — minimum 44px hit area ─────────────── */
+  .btn-xs { padding: 7px 12px; }
+  .btn-sm { padding: 7px 14px; }
 }
 
 /* ================================================================
    VERY SMALL  (≤ 420px)
    ================================================================ */
 @media (max-width: 420px) {
-  .stats-row   { grid-template-columns: 1fr; }
+  .stats-row   { grid-template-columns: 1fr !important; }
   .member-grid { grid-template-columns: 1fr; }
 
   .stat-card-value { font-size: 20px; }
@@ -1365,4 +1410,8 @@ a { text-decoration: none; color: inherit; }
   .page-body { padding: 10px; }
 
   .debt-actions { flex-direction: column; }
+
+  /* Contribution breakdown — single column layout */
+  .contrib-row { grid-template-columns: 28px 1fr 46px; }
+  .contrib-meta { display: none; }
 }
