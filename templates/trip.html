@@ -57,14 +57,15 @@
         {% if is_owner %}Manage trip details, budget, and members{% else %}{{ trip.name }}{% if trip.destination %} · {{ trip.destination }}{% endif %}{% endif %}
       </p>
     </div>
-    {% if is_owner %}
     <div class="topbar-right">
+      {% if is_owner %}
       <form method="POST" action="/trip/new" style="display:inline">
         <button type="submit" class="btn btn-ghost btn-sm">+ New Trip</button>
       </form>
       <button type="submit" form="trip-form" class="btn btn-primary btn-sm">Save Changes</button>
+      {% endif %}
+      <a href="/logout" class="mobile-logout">Sign out</a>
     </div>
-    {% endif %}
   </header>
 
   <div class="page-body">

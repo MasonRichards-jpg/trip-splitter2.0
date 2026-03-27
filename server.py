@@ -465,6 +465,22 @@ def trips_list():
                            active_trip_id=_active_trip_id())
 
 
+@app.route('/trips/join-by-link', methods=['POST'])
+@login_required
+def trips_join_by_link():
+    """Parse a pasted invite link or bare token and redirect to the join handler."""
+    raw = request.form.get('join_link', '').strip()
+    # Accept full URL (anything after /join/) or a bare token
+    if '/join/' in raw:
+        token = raw.split('/join/')[-1].strip('/')
+    else:
+        token = raw
+    if not token:
+        flash('Please paste a valid invite link or token.', 'warning')
+        return redirect(url_for('trips_list'))
+    return redirect(url_for('join_trip', token=token))
+
+
 @app.route('/trips/switch/<int:trip_id>', methods=['POST'])
 @login_required
 def trips_switch(trip_id):

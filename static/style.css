@@ -1189,6 +1189,13 @@ a { text-decoration: none; color: inherit; }
 }
 
 /* ================================================================
+   MOBILE-ONLY LOGOUT BUTTON (hidden on desktop)
+   ================================================================ */
+.mobile-logout {
+  display: none;
+}
+
+/* ================================================================
    GLOBE CANVAS + GLASSMORPHISM
    ================================================================ */
 
@@ -1390,6 +1397,21 @@ a { text-decoration: none; color: inherit; }
 
   /* ── Topbar right — wrap buttons if needed ─────────────── */
   .topbar-right { flex-wrap: wrap; gap: 6px; }
+
+  /* ── Mobile logout button ───────────────────────────────── */
+  .mobile-logout {
+    display: inline-flex;
+    align-items: center;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--muted);
+    padding: 7px 12px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xs);
+    white-space: nowrap;
+    touch-action: manipulation;
+  }
 
   /* ── Touch targets — minimum 44px hit area ─────────────── */
   .btn-xs { padding: 7px 12px; }
