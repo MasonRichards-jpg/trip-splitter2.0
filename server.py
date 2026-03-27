@@ -143,6 +143,8 @@ def member_color(name):
 def login():
     invite_token = request.form.get("invite_token") or request.args.get("invite")
     if 'user_id' in session:
+        if invite_token:
+            return redirect(url_for('join_trip', token=invite_token))
         return redirect(url_for('index'))
     error = None
     if request.method == 'POST':
@@ -168,10 +170,12 @@ def login():
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
+    invite_token  = request.args.get('invite', '')
     if 'user_id' in session:
+        if invite_token:
+            return redirect(url_for('join_trip', token=invite_token))
         return redirect(url_for('index'))
 
-    invite_token  = request.args.get('invite', '')
     prefill_email = request.args.get('email', '')
     invite_payload = None
 
@@ -214,7 +218,13 @@ def register():
                     session['user_id'] = user['id']
 
                     if post_tok:
-                        return redirect(url_for('join_trip', token=post_tok))
+                        payload = main.verify_invite_token(post_tok)
+                        trip_id = payload.get('trip_id') if payload else None
+                        trip = main.get_trip(trip_id) if trip_id else None
+                        if trip:
+                            main.add_member(trip_id, user['name'], user_id=user['id'])
+                            session['active_trip_id'] = trip_id
+                            return redirect(url_for('index'))
 
                     _set_active_trip(user['id'])
                     return redirect(url_for('index'))
@@ -546,16 +556,15 @@ def join_trip(token):
         return render_template('join_invalid.html'), 400
 
     # Already logged in — join immediately
-    if 'user_id' in session and _current_user():
+    if 'user_id' in session:
         user = _current_user()
-        user = _current_user()
-
-        if user['id'] not in trip.get('member_user_ids', []):
-            main.add_member(trip_id, user['name'], user_id=user['id'])
-
-        session['active_trip_id'] = trip_id
-
-        return redirect(url_for('index'))
+        if user:
+            if user['id'] not in trip.get('member_user_ids', []):
+                main.add_member(trip_id, user['name'], user_id=user['id'])
+            session['active_trip_id'] = trip_id
+            return redirect(url_for('index'))
+        # session has a user_id but the user can't be found (e.g. data was reset)
+        session.clear()
 
     # Not logged in — send to register (or login) with token
     return redirect(url_for('register', invite=token))
