@@ -1,206 +1,74 @@
-import base64
 import csv
 import io
-import json
 import os
 from datetime import datetime
 
-import requests as _http
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
+from pymongo import MongoClient, ReturnDocument
 from werkzeug.security import check_password_hash, generate_password_hash
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 
-DATA_FILE  = os.environ.get('DATA_FILE', os.path.join(os.path.dirname(__file__), 'data.json'))
-SECRET_KEY = os.environ.get('SECRET_KEY', 'payback-dev-secret-change-me')
+SECRET_KEY  = os.environ.get('SECRET_KEY', 'payback-dev-secret-change-me')
 _serializer = URLSafeTimedSerializer(SECRET_KEY)
-PAGE_SIZE = 10
+PAGE_SIZE   = 10
 
-# GitHub storage (optional — set all three env vars to enable)
-_GH_TOKEN = os.environ.get('GITHUB_TOKEN', '')
-_GH_REPO  = os.environ.get('GITHUB_REPO', '')   # "owner/repo-name"
-_GH_PATH  = os.environ.get('GITHUB_PATH', 'data.json')
-_gh_sha   = None  # cached blob SHA; required by GitHub API to update a file
+# ── MongoDB connection ─────────────────────────────────────────────────────────
 
-
-def _gh_headers():
-    return {'Authorization': f'token {_GH_TOKEN}', 'Accept': 'application/vnd.github+json'}
+_mongo_client = None
+_mongo_db     = None
 
 
-def _gh_enabled():
-    return bool(_GH_TOKEN and _GH_REPO)
-
-# ── In-memory state ────────────────────────────────────────────────────────────
-
-trips = []
-expenses = []
-settlements = []
-users = []
-_next_id = 1
-_next_user_id = 1
-_next_trip_id = 1
+def _get_db():
+    global _mongo_client, _mongo_db
+    if _mongo_db is None:
+        uri = os.environ.get('MONGO_URI', 'mongodb://localhost:27017/tripsplitter')
+        _mongo_client = MongoClient(uri)
+        _mongo_db = _mongo_client.get_default_database()
+    return _mongo_db
 
 
-# ── Persistence ────────────────────────────────────────────────────────────────
-
-def _make_default_trip(owner_id, name='My Trip', trip_id=1):
-    return {
-        'id':             trip_id,
-        'name':           name,
-        'owner_id':       owner_id,
-        'member_user_ids': [owner_id],
-        'destination':    '',
-        'start_date':     datetime.today().strftime('%Y-%m-%d'),
-        'end_date':       datetime.today().strftime('%Y-%m-%d'),
-        'currency':       'USD',
-        'cover':          '✈️',
-        'description':    '',
-        'budget':         0.0,
-        'split_method':   'equal',
-        'members':        [],
-    }
-
-
-def _apply_data(d):
-    """Populate in-memory state from a parsed data dict."""
-    global _next_id, _next_user_id, _next_trip_id
-    users[:] = d.get('users', [])
-    _next_user_id = d.get('next_user_id', 1)
-    _next_id      = d.get('next_id', 1)
-    _next_trip_id = d.get('next_trip_id', 1)
-
-    # ── Migrate old single-trip format ──────────────────────────────────
-    if 'trip' in d and 'trips' not in d:
-        old = d['trip']
-        old['id']              = 1
-        old['owner_id']        = users[0]['id'] if users else 1
-        old['member_user_ids'] = [u['id'] for u in users]
-        if 'members' not in old:
-            old['members'] = []
-        owner = next((u for u in users if u['id'] == old['owner_id']), None)
-        if owner and owner['name'] not in old['members']:
-            old['members'].insert(0, owner['name'])
-        trips[:] = [old]
-        _next_trip_id = max(_next_trip_id, 2)
-        raw_expenses    = d.get('expenses', [])
-        raw_settlements = d.get('settlements', [])
-        for e in raw_expenses:
-            e.setdefault('trip_id', 1)
-        for s in raw_settlements:
-            s.setdefault('trip_id', 1)
-        expenses[:]    = raw_expenses
-        settlements[:] = raw_settlements
-    else:
-        trips[:]       = d.get('trips', [])
-        expenses[:]    = d.get('expenses', [])
-        settlements[:] = d.get('settlements', [])
-
-
-def _load(silent=False):
-    global trips, expenses, settlements, users, _next_id, _next_user_id, _next_trip_id, _gh_sha
-    if _gh_enabled():
-        try:
-            url = f'https://api.github.com/repos/{_GH_REPO}/contents/{_GH_PATH}'
-            r = _http.get(url, headers=_gh_headers(), timeout=10)
-            if r.status_code == 200:
-                blob = r.json()
-                _gh_sha = blob['sha']
-                raw = base64.b64decode(blob['content'])
-                _apply_data(json.loads(raw))
-                if not silent:
-                    print(f'[PayBack] Loaded data from GitHub ({_GH_REPO}/{_GH_PATH})')
-                return
-            elif r.status_code == 404:
-                if not silent:
-                    print('[PayBack] No data file in GitHub yet — starting fresh')
-                return
-            else:
-                print(f'[PayBack] GitHub load failed ({r.status_code}) — falling back to local file')
-        except Exception as e:
-            print(f'[PayBack] GitHub load error: {e} — falling back to local file')
-
-    # Local fallback
-    if not os.path.exists(DATA_FILE):
-        return
-    try:
-        with open(DATA_FILE) as f:
-            _apply_data(json.load(f))
-    except Exception as e:
-        print(f'[PayBack] Failed to load data: {e}')
-
-
-def _save():
-    global _gh_sha
-    data = {
-        'trips':        trips,
-        'expenses':     expenses,
-        'settlements':  settlements,
-        'users':        users,
-        'next_id':      _next_id,
-        'next_user_id': _next_user_id,
-        'next_trip_id': _next_trip_id,
-    }
-    json_bytes = json.dumps(data, indent=2).encode()
-
-    if _gh_enabled():
-        try:
-            url     = f'https://api.github.com/repos/{_GH_REPO}/contents/{_GH_PATH}'
-            payload = {
-                'message': 'chore: update data',
-                'content': base64.b64encode(json_bytes).decode(),
-            }
-            if _gh_sha:
-                payload['sha'] = _gh_sha
-            r = _http.put(url, json=payload, headers=_gh_headers(), timeout=15)
-            if r.status_code == 409:
-                # SHA mismatch — someone else wrote first; re-fetch SHA and retry once
-                r2 = _http.get(url, headers=_gh_headers(), timeout=10)
-                if r2.status_code == 200:
-                    _gh_sha = r2.json()['sha']
-                    payload['sha'] = _gh_sha
-                    r = _http.put(url, json=payload, headers=_gh_headers(), timeout=15)
-            if r.status_code in (200, 201):
-                _gh_sha = r.json()['content']['sha']
-                return
-            else:
-                print(f'[PayBack] GitHub save failed ({r.status_code}): {r.text[:200]}')
-        except Exception as e:
-            print(f'[PayBack] GitHub save error: {e}')
-
-    # Local fallback
-    with open(DATA_FILE, 'w') as f:
-        f.write(json_bytes.decode())
-
-
-_load()
+def _next_mongo_id(counter_name):
+    """Atomically increment and return the next integer ID for a collection."""
+    db = _get_db()
+    result = db.counters.find_one_and_update(
+        {'_id': counter_name},
+        {'$inc': {'seq': 1}},
+        upsert=True,
+        return_document=ReturnDocument.AFTER,
+    )
+    return result['seq']
 
 
 # ── Users ──────────────────────────────────────────────────────────────────────
 
 def get_user_by_email(email):
-    email = email.strip().lower()
-    return next((u for u in users if u['email'] == email), None)
+    db = _get_db()
+    return db.users.find_one({'email': email.strip().lower()})
 
 
 def get_user_by_id(user_id):
-    return next((u for u in users if u['id'] == user_id), None)
+    if user_id is None:
+        return None
+    db = _get_db()
+    return db.users.find_one({'_id': user_id})
 
 
 def create_user(name, email, password):
-    global _next_user_id
+    db = _get_db()
     email = email.strip().lower()
     if get_user_by_email(email):
         return None, 'Email already registered'
+    user_id = _next_mongo_id('user_id')
     user = {
-        'id':            _next_user_id,
+        '_id':           user_id,
+        'id':            user_id,
         'name':          name.strip(),
         'email':         email,
         'password_hash': generate_password_hash(password),
         'created_at':    datetime.today().strftime('%Y-%m-%d'),
     }
-    _next_user_id += 1
-    users.append(user)
-    _save()
+    db.users.insert_one(user)
     return user, None
 
 
@@ -213,109 +81,131 @@ def verify_user(email, password):
 
 # ── Trips ──────────────────────────────────────────────────────────────────────
 
+def _make_default_trip(owner_id, name='My Trip', trip_id=1):
+    return {
+        '_id':             trip_id,
+        'id':              trip_id,
+        'name':            name,
+        'owner_id':        owner_id,
+        'member_user_ids': [owner_id],
+        'destination':     '',
+        'start_date':      datetime.today().strftime('%Y-%m-%d'),
+        'end_date':        datetime.today().strftime('%Y-%m-%d'),
+        'currency':        'USD',
+        'cover':           '✈️',
+        'description':     '',
+        'budget':          0.0,
+        'split_method':    'equal',
+        'members':         [],
+    }
+
+
 def get_trip(trip_id):
-    return next((t for t in trips if t['id'] == trip_id), None)
+    db = _get_db()
+    return db.trips.find_one({'_id': trip_id})
 
 
 def get_user_trips(user_id):
     """Return all trips the user owns or is a member of."""
-    return [t for t in trips if user_id in t.get('member_user_ids', [])]
+    db = _get_db()
+    return list(db.trips.find({'member_user_ids': user_id}))
 
 
 def create_trip(owner_id, name='My Trip'):
-    global _next_trip_id
-    owner = get_user_by_id(owner_id)
-    t = _make_default_trip(owner_id, name, _next_trip_id)
+    db = _get_db()
+    trip_id = _next_mongo_id('trip_id')
+    owner   = get_user_by_id(owner_id)
+    t       = _make_default_trip(owner_id, name, trip_id)
     if owner and owner['name'] not in t['members']:
         t['members'] = [owner['name']]
-    _next_trip_id += 1
-    trips.append(t)
-    _save()
+    db.trips.insert_one(t)
     return t
 
 
 def save_trip(trip_id, trip_name, destination, start_date, end_date,
               currency, cover, description, budget, split_method):
-    t = get_trip(trip_id)
-    if not t:
-        return
-    t.update({
-        'name':         trip_name.strip(),
-        'destination':  destination.strip(),
-        'start_date':   start_date,
-        'end_date':     end_date,
-        'currency':     currency,
-        'cover':        cover,
-        'description':  description.strip(),
-        'budget':       round(float(str(budget).replace(',', '')), 2),
-        'split_method': split_method,
-    })
-    _save()
+    db = _get_db()
+    db.trips.update_one(
+        {'_id': trip_id},
+        {'$set': {
+            'name':         trip_name.strip(),
+            'destination':  destination.strip(),
+            'start_date':   start_date,
+            'end_date':     end_date,
+            'currency':     currency,
+            'cover':        cover,
+            'description':  description.strip(),
+            'budget':       round(float(str(budget).replace(',', '')), 2),
+            'split_method': split_method,
+        }}
+    )
 
 
 def reset_expenses(trip_id):
-    global expenses, settlements, _next_id
-    expenses[:]    = [e for e in expenses    if e.get('trip_id') != trip_id]
-    settlements[:] = [s for s in settlements if s.get('trip_id') != trip_id]
-    _save()
+    db = _get_db()
+    db.expenses.delete_many({'trip_id': trip_id})
+    db.settlements.delete_many({'trip_id': trip_id})
 
 
 def delete_trip(trip_id):
-    global trips, expenses, settlements
-    trips[:]       = [t for t in trips       if t['id'] != trip_id]
-    expenses[:]    = [e for e in expenses    if e.get('trip_id') != trip_id]
-    settlements[:] = [s for s in settlements if s.get('trip_id') != trip_id]
-    _save()
+    db = _get_db()
+    db.trips.delete_one({'_id': trip_id})
+    db.expenses.delete_many({'trip_id': trip_id})
+    db.settlements.delete_many({'trip_id': trip_id})
 
 
 # ── Members ────────────────────────────────────────────────────────────────────
 
 def add_member(trip_id, display_name, user_id=None):
+    db   = _get_db()
+    name = display_name.strip()
+    if not name:
+        return
     t = get_trip(trip_id)
     if not t:
         return
-    name = display_name.strip()
-    if name and name not in t['members']:
-        t['members'].append(name)
+    update = {}
+    if name not in t['members']:
+        update['$push'] = {'members': name}
     if user_id and user_id not in t.get('member_user_ids', []):
-        t.setdefault('member_user_ids', []).append(user_id)
-    _save()
+        update.setdefault('$addToSet', {})['member_user_ids'] = user_id
+    if update:
+        db.trips.update_one({'_id': trip_id}, update)
 
 
 def remove_member(trip_id, name):
-    t = get_trip(trip_id)
-    if not t:
-        return
+    db   = _get_db()
     name = name.strip()
-    if name in t['members']:
-        t['members'].remove(name)
-    _save()
+    if name:
+        db.trips.update_one({'_id': trip_id}, {'$pull': {'members': name}})
 
 
 def rename_member(trip_id, old_name, new_name):
-    t = get_trip(trip_id)
-    if not t:
-        return
+    db       = _get_db()
     old_name = old_name.strip()
     new_name = new_name.strip()
-    if not new_name or old_name not in t['members']:
+    t = get_trip(trip_id)
+    if not t or not new_name or old_name not in t['members']:
         return
-    idx = t['members'].index(old_name)
-    t['members'][idx] = new_name
-    # Update all expenses that reference the old name
-    for e in expenses:
-        if e.get('trip_id') == trip_id:
-            if e['paid_by'] == old_name:
-                e['paid_by'] = new_name
-            e['split'] = [new_name if m == old_name else m for m in e['split']]
-    # Update settlements
-    for s in settlements:
-        if s.get('trip_id') == trip_id:
-            if s['debtor'] == old_name:
-                s['debtor'] = new_name
-            if s['creditor'] == old_name:
-                s['creditor'] = new_name
-    _save()
+    new_members = [new_name if m == old_name else m for m in t['members']]
+    db.trips.update_one({'_id': trip_id}, {'$set': {'members': new_members}})
+    db.expenses.update_many(
+        {'trip_id': trip_id, 'paid_by': old_name},
+        {'$set': {'paid_by': new_name}}
+    )
+    db.expenses.update_many(
+        {'trip_id': trip_id, 'split': old_name},
+        {'$set': {'split.$[elem]': new_name}},
+        array_filters=[{'elem': {'$eq': old_name}}]
+    )
+    db.settlements.update_many(
+        {'trip_id': trip_id, 'debtor': old_name},
+        {'$set': {'debtor': new_name}}
+    )
+    db.settlements.update_many(
+        {'trip_id': trip_id, 'creditor': old_name},
+        {'$set': {'creditor': new_name}}
+    )
 
 
 # ── Invites ────────────────────────────────────────────────────────────────────
@@ -337,37 +227,50 @@ def verify_invite_token(token):
 # ── Expenses ───────────────────────────────────────────────────────────────────
 
 def get_expenses(trip_id, sort=None, search=None, cat_filter=None, page=1):
-    result = [e for e in expenses if e.get('trip_id') == trip_id]
-
-    if search:
-        q = search.lower()
-        result = [e for e in result if q in e['description'].lower()
-                  or q in e.get('notes', '').lower()
-                  or q in e['paid_by'].lower()]
+    db    = _get_db()
+    query = {'trip_id': trip_id}
 
     if cat_filter and cat_filter != 'all':
-        result = [e for e in result if e['category'] == cat_filter]
+        query['category'] = cat_filter
+
+    if search:
+        q = search.strip()
+        query['$or'] = [
+            {'description': {'$regex': q, '$options': 'i'}},
+            {'notes':       {'$regex': q, '$options': 'i'}},
+            {'paid_by':     {'$regex': q, '$options': 'i'}},
+        ]
 
     if sort == 'oldest':
-        result.sort(key=lambda e: e['date'])
+        sort_spec = [('date', 1)]
     elif sort == 'highest':
-        result.sort(key=lambda e: e['amount'], reverse=True)
+        sort_spec = [('amount', -1)]
     elif sort == 'lowest':
-        result.sort(key=lambda e: e['amount'])
+        sort_spec = [('amount', 1)]
     else:
-        result.sort(key=lambda e: e['date'], reverse=True)
+        sort_spec = [('date', -1)]
 
-    total_count  = len(result)
-    total_amount = round(sum(e['amount'] for e in result), 2)
+    total_count  = db.expenses.count_documents(query)
+    agg_total    = list(db.expenses.aggregate([
+        {'$match': query},
+        {'$group': {'_id': None, 'total': {'$sum': '$amount'}}},
+    ]))
+    total_amount = round(agg_total[0]['total'] if agg_total else 0, 2)
+
     pages = max(1, (total_count + PAGE_SIZE - 1) // PAGE_SIZE)
     page  = max(1, min(page, pages))
-    start = (page - 1) * PAGE_SIZE
-    # Key is 'expense_list' (not 'items') to avoid shadowing dict.items()
-    expense_list = result[start:start + PAGE_SIZE]
+    skip  = (page - 1) * PAGE_SIZE
 
-    today_str      = datetime.today().strftime('%Y-%m-%d')
-    today_expenses = [e for e in expenses
-                      if e.get('trip_id') == trip_id and e['date'] == today_str]
+    expense_list = list(
+        db.expenses.find(query).sort(sort_spec).skip(skip).limit(PAGE_SIZE)
+    )
+
+    today_str  = datetime.today().strftime('%Y-%m-%d')
+    agg_today  = list(db.expenses.aggregate([
+        {'$match': {'trip_id': trip_id, 'date': today_str}},
+        {'$group': {'_id': None, 'count': {'$sum': 1}, 'total': {'$sum': '$amount'}}},
+    ]))
+    today_stats = agg_today[0] if agg_today else {'count': 0, 'total': 0}
 
     return {
         'expense_list': expense_list,
@@ -376,17 +279,19 @@ def get_expenses(trip_id, sort=None, search=None, cat_filter=None, page=1):
         'page':         page,
         'pages':        pages,
         'page_size':    PAGE_SIZE,
-        'today_count':  len(today_expenses),
-        'today_total':  round(sum(e['amount'] for e in today_expenses), 2),
+        'today_count':  today_stats['count'],
+        'today_total':  round(today_stats['total'], 2),
     }
 
 
 def add_expense(trip_id, description, amount, date, paid_by, category, split, notes=''):
-    global _next_id
-    t = get_trip(trip_id)
-    members = t['members'] if t else []
-    expenses.append({
-        'id':          _next_id,
+    db         = _get_db()
+    expense_id = _next_mongo_id('expense_id')
+    t          = get_trip(trip_id)
+    members    = t['members'] if t else []
+    db.expenses.insert_one({
+        '_id':         expense_id,
+        'id':          expense_id,
         'trip_id':     trip_id,
         'description': description.strip(),
         'amount':      round(float(str(amount).replace(',', '')), 2),
@@ -396,42 +301,33 @@ def add_expense(trip_id, description, amount, date, paid_by, category, split, no
         'split':       split if split else list(members),
         'notes':       notes.strip(),
     })
-    _next_id += 1
-    _save()
 
 
 def get_expense(expense_id):
-    return next((e for e in expenses if e['id'] == expense_id), None)
+    db = _get_db()
+    return db.expenses.find_one({'_id': expense_id})
 
 
 def update_expense(expense_id, **fields):
-    for e in expenses:
-        if e['id'] == expense_id:
-            if 'amount' in fields:
-                fields['amount'] = round(float(str(fields['amount']).replace(',', '')), 2)
-            e.update(fields)
-            _save()
-            return True
-    return False
+    db = _get_db()
+    if 'amount' in fields:
+        fields['amount'] = round(float(str(fields['amount']).replace(',', '')), 2)
+    result = db.expenses.update_one({'_id': expense_id}, {'$set': fields})
+    return result.matched_count > 0
 
 
 def delete_expense(expense_id):
-    global expenses
-    before   = len(expenses)
-    expenses = [e for e in expenses if e['id'] != expense_id]
-    _save()
-    return len(expenses) < before
+    db     = _get_db()
+    result = db.expenses.delete_one({'_id': expense_id})
+    return result.deleted_count > 0
 
 
 def export_csv(trip_id):
+    db     = _get_db()
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(['ID', 'Description', 'Amount', 'Date', 'Paid By', 'Category', 'Split', 'Notes'])
-    trip_expenses = sorted(
-        (e for e in expenses if e.get('trip_id') == trip_id),
-        key=lambda x: x['date']
-    )
-    for e in trip_expenses:
+    for e in db.expenses.find({'trip_id': trip_id}).sort([('date', 1)]):
         writer.writerow([
             e['id'], e['description'], f"{e['amount']:.2f}", e['date'],
             e['paid_by'], e['category'], ','.join(e['split']), e.get('notes', '')
@@ -442,7 +338,8 @@ def export_csv(trip_id):
 # ── Balances ───────────────────────────────────────────────────────────────────
 
 def get_balances(trip_id, member=None):
-    t = get_trip(trip_id)
+    db      = _get_db()
+    t       = get_trip(trip_id)
     members = t['members'] if t else []
     if not members:
         return {
@@ -450,7 +347,7 @@ def get_balances(trip_id, member=None):
             'per_person': 0, 'category_totals': {}, 'transactions': []
         }
 
-    trip_expenses = [e for e in expenses if e.get('trip_id') == trip_id]
+    trip_expenses = list(db.expenses.find({'trip_id': trip_id}))
 
     paid       = {m: 0.0 for m in members}
     share_owed = {m: 0.0 for m in members}
@@ -497,12 +394,12 @@ def get_balances(trip_id, member=None):
             'splits':      txn_splits,
         })
 
-    transactions.sort(key=lambda t: t['date'], reverse=True)
+    transactions.sort(key=lambda x: x['date'], reverse=True)
 
     if member and member != 'all' and member in members:
         transactions = [
-            t for t in transactions
-            if t['paid_by'] == member or t['splits'].get(member, 0) != 0
+            x for x in transactions
+            if x['paid_by'] == member or x['splits'].get(member, 0) != 0
         ]
 
     total      = round(sum(paid.values()), 2)
@@ -559,61 +456,40 @@ def get_balances(trip_id, member=None):
 # ── Settle Up ──────────────────────────────────────────────────────────────────
 
 def get_settlements(trip_id):
-    return [s for s in settlements if s.get('trip_id') == trip_id]
+    db = _get_db()
+    return list(db.settlements.find({'trip_id': trip_id}))
 
 
 def settle_debt(trip_id, debtor, creditor):
+    db           = _get_db()
     balance_data = get_balances(trip_id)
-    amount = next(
+    amount       = next(
         (d['amount'] for d in balance_data['debts']
          if d['debtor'] == debtor and d['creditor'] == creditor),
         0.0
     )
     today = datetime.today().strftime('%Y-%m-%d')
-    for s in settlements:
-        if (s.get('trip_id') == trip_id
-                and s['debtor'] == debtor and s['creditor'] == creditor):
-            s.update({'status': 'settled', 'settled_on': today, 'amount': amount})
-            _save()
-            return
-    settlements.append({
-        'trip_id':    trip_id,
-        'debtor':     debtor,
-        'creditor':   creditor,
-        'amount':     amount,
-        'status':     'settled',
-        'settled_on': today,
-    })
-    _save()
+    db.settlements.update_one(
+        {'trip_id': trip_id, 'debtor': debtor, 'creditor': creditor},
+        {'$set': {'status': 'settled', 'settled_on': today, 'amount': amount}},
+        upsert=True,
+    )
 
 
 def mark_all_settled(trip_id):
-    balance_data     = get_balances(trip_id)
-    trip_settlements = get_settlements(trip_id)
-    settled_amounts  = {(s['debtor'], s['creditor']): s['amount']
-                        for s in trip_settlements if s['status'] == 'settled'}
+    db           = _get_db()
+    balance_data = get_balances(trip_id)
+    existing     = {
+        (s['debtor'], s['creditor']): s['amount']
+        for s in db.settlements.find({'trip_id': trip_id, 'status': 'settled'})
+    }
     today = datetime.today().strftime('%Y-%m-%d')
     for debt in balance_data['debts']:
-        key = (debt['debtor'], debt['creditor'])
-        remaining = round(debt['amount'] - settled_amounts.get(key, 0), 2)
+        key       = (debt['debtor'], debt['creditor'])
+        remaining = round(debt['amount'] - existing.get(key, 0), 2)
         if remaining > 0.005:
-            # Update existing settlement record or create a new one
-            for s in settlements:
-                if (s.get('trip_id') == trip_id
-                        and s['debtor'] == debt['debtor']
-                        and s['creditor'] == debt['creditor']):
-                    s.update({'status': 'settled', 'settled_on': today,
-                              'amount': debt['amount']})
-                    break
-            else:
-                settlements.append({
-                    'trip_id':    trip_id,
-                    'debtor':     debt['debtor'],
-                    'creditor':   debt['creditor'],
-                    'amount':     debt['amount'],
-                    'status':     'settled',
-                    'settled_on': today,
-                })
-    _save()
-
-
+            db.settlements.update_one(
+                {'trip_id': trip_id, 'debtor': debt['debtor'], 'creditor': debt['creditor']},
+                {'$set': {'status': 'settled', 'settled_on': today, 'amount': debt['amount']}},
+                upsert=True,
+            )

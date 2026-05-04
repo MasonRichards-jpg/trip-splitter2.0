@@ -14,15 +14,6 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'payback-dev-secret-change-me')
 
 
-@app.before_request
-def refresh_data():
-    """Re-sync in-memory state from GitHub before every request.
-
-    Gunicorn runs multiple workers, each with their own in-memory data.
-    Without this, one worker can create a trip that another worker never sees.
-    """
-    main._load(silent=True)
-
 # ── Auth helpers ───────────────────────────────────────────────────────────────
 
 def login_required(f):
@@ -621,4 +612,4 @@ def trip_delete():
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8000, debug=True)
+    app.run(host='0.0.0.0', port=8000, debug=True, use_reloader=False)
